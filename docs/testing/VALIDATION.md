@@ -2,6 +2,10 @@
 
 ## 当前阶段
 
+当前优先桌面效果和功能验证，完整性能验收按用户要求后置。
+Test-Workspace.ps1 检查七窗口、真实拖动/缩放、主题、专注、中文便签、桌面/HUD、
+隐藏/恢复、重复启动及重启持久化。Capture-Workspace.ps1 检查实际原生界面截图。
+
 执行 tools/scripts/Validate-Workspace.ps1，检查必需文件、预留目录、文档相对链接和 JSON。
 GitHub Actions 使用同一入口。
 原生代码通过 Build-Native.ps1 构建 Release 与 CTest；Test-Probe.ps1 检查六组窗口/材质正常绘制并退出。

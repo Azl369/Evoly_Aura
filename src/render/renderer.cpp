@@ -74,7 +74,7 @@ void Renderer::ReleaseAll() {
     icons_.clear();
     if (composition_) composition_->Commit();
 }
-void Renderer::Paint(HWND window, unsigned index, Material material, bool acrylicAccepted) {
+void Renderer::Paint(HWND window, unsigned index, Material material, bool acrylicAccepted, const WidgetView* view) {
     RECT rect{};
     GetClientRect(window, &rect);
     unsigned width = unsigned(rect.right), height = unsigned(rect.bottom);
@@ -114,7 +114,7 @@ void Renderer::Paint(HWND window, unsigned index, Material material, bool acryli
         Check(software_->BindDC(item.dc, &rect), "Bind DIB");
         software_->BeginDraw();
         software_->SetTransform(D2D1::Matrix3x2F::Scale(scale, scale));
-        Draw(software_.Get(), window, index, material, false, scale);
+        Draw(software_.Get(), window, index, material, false, scale, view);
         Check(software_->EndDraw(), "Software draw");
         RECT screen{};
         GetWindowRect(window, &screen);
@@ -131,7 +131,7 @@ void Renderer::Paint(HWND window, unsigned index, Material material, bool acryli
         context->SetTransform(D2D1::Matrix3x2F::Scale(scale, scale) *
             D2D1::Matrix3x2F::Translation(float(offset.x), float(offset.y)));
         try {
-            Draw(context.Get(), window, index, material, acrylicAccepted, scale);
+            Draw(context.Get(), window, index, material, acrylicAccepted, scale, view);
         } catch (...) {
             item.surface->EndDraw();
             throw;
@@ -142,7 +142,8 @@ void Renderer::Paint(HWND window, unsigned index, Material material, bool acryli
     ++draws;
 }
 void Renderer::Draw(ID2D1RenderTarget* target, HWND window, unsigned index,
-                    Material material, bool acrylicAccepted, float scale) {
+                    Material material, bool acrylicAccepted, float scale, const WidgetView* view) {
+    if (view) { DrawWidget(target,window,*view,scale); return; }
     RECT client{}, screen{};
     GetClientRect(window, &client);
     GetWindowRect(window, &screen);

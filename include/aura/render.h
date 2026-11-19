@@ -10,6 +10,7 @@
 #include <memory>
 #include <stdexcept>
 #include "aura/image.h"
+#include "aura/workspace.h"
 
 namespace aura {
 using Microsoft::WRL::ComPtr;
@@ -29,7 +30,7 @@ public:
     Backend backend() const { return backend_; }
     bool warp() const { return warp_; }
     void LoadBackground(HWND window);
-    void Paint(HWND window, unsigned index, Material material, bool acrylicAccepted);
+    void Paint(HWND window, unsigned index, Material material, bool acrylicAccepted, const WidgetView* view = nullptr);
     void Release(HWND window);
     void ReleaseAll();
     size_t WallpaperBytes() const { return wallpaper_.image.pixels.size() * 4; }
@@ -38,7 +39,9 @@ public:
 private:
     struct Surface;
     void Draw(ID2D1RenderTarget* target, HWND window, unsigned index,
-              Material material, bool acrylicAccepted, float scale);
+              Material material, bool acrylicAccepted, float scale, const WidgetView* view);
+    void DrawWidget(ID2D1RenderTarget* target, HWND window, const WidgetView& view, float scale);
+    std::array<ComPtr<IDWriteTextFormat>,6> widgetFonts_;
     Backend backend_;
     bool warp_ = false;
     ComPtr<ID2D1Factory1> factory_;
