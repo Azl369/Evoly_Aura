@@ -1,7 +1,7 @@
 # Git 与 GitHub 工作流
 
-目标远端：Azl369/Evoly_Aura（公开）。
-远端是否已创建、是否已推送，以 [交付状态](DELIVERY_STATUS.md) 和实际 Git 状态为准。
+远端：[Azl369/Evoly_Aura](https://github.com/Azl369/Evoly_Aura)（公开，已创建并完成首次推送）。
+origin 已配置，main 跟踪 origin/main；核验记录见 [交付状态](DELIVERY_STATUS.md)。
 
 ## 提交身份
 
@@ -35,7 +35,7 @@ git push
 出现分叉先检查历史，不自动 reset 或 force push。
 “同步更新”指阶段性 commit + push；此工作区不安装定时自动提交任务。
 
-## 首次 GitHub 操作
+## 首次 GitHub 操作（已完成，以下保留为恢复指南）
 
 本地 CLI 检测到旧登录失效时，由用户在可信终端完成交互登录：
 

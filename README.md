@@ -5,7 +5,7 @@
 **当前阶段：工作区和计划已建立；尚未实现应用，也没有实测性能数据。**
 
 项目名称为 Evoly Aura，目录与远端仓库名称统一为 Evoly_Aura。
-目标远端：https://github.com/Azl369/Evoly_Aura（公开；实际同步状态见 Git 与交付记录）。
+远端仓库：[Azl369/Evoly_Aura](https://github.com/Azl369/Evoly_Aura)（公开，已完成首次同步）。
 
 ## 产品方向
 
