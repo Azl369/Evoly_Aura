@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "B0",
+  "status": "planned-not-executable",
+  "description": "Controlled native baseline; no application or measurements yet",
+  "platform": {
+    "os": "Windows 11 x64",
+    "displayPixels": {
+      "width": 2560,
+      "height": 1440
+    },
+    "dpiScale": 1
+  },
+  "build": "Release x64",
+  "panels": {
+    "count": 6,
+    "sizeDip": {
+      "width": 400,
+      "height": 240
+    },
+    "content": [
+      "controlled-text",
+      "minute-clock",
+      "shared-icons"
+    ],
+    "maxSharedIcons": 24
+  },
+  "wallpaper": "static",
+  "editorOpen": false,
+  "networkWidgets": false,
+  "measurement": {
+    "baselineSeconds": 60,
+    "warmupSeconds": 60,
+    "sampleIntervalSeconds": 1,
+    "steadySeconds": 300,
+    "repetitions": 3
+  },
+  "challengeTargets": {
+    "privateWorkingSetP95MiB": 20,
+    "privateBytesP95MiB": 40
+  }
+}

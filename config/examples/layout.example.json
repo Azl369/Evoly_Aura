@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "theme": "frost",
+  "panels": [
+    {
+      "id": "clock-main",
+      "widget": "clock",
+      "mode": "desktop",
+      "monitor": "primary",
+      "boundsDip": {
+        "x": 48,
+        "y": 48,
+        "width": 400,
+        "height": 240
+      },
+      "locked": false,
+      "settings": {
+        "showSeconds": false
+      }
+    }
+  ],
+  "performance": {
+    "materialMode": "wallpaper-cache",
+    "imageCacheLimitMiB": 8,
+    "hiddenPolicy": "pause"
+  }
+}

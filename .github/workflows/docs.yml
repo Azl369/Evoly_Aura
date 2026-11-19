@@ -1,0 +1,40 @@
+name: Workspace docs
+
+on:
+  push:
+    paths:
+      - '**/*.md'
+      - '**/*.json'
+      - '**/*.ps1'
+      - '.github/**'
+      - '.gitignore'
+      - '.gitattributes'
+      - '.editorconfig'
+  pull_request:
+    paths:
+      - '**/*.md'
+      - '**/*.json'
+      - '**/*.ps1'
+      - '.github/**'
+      - '.gitignore'
+      - '.gitattributes'
+      - '.editorconfig'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate workspace documentation and examples
+        shell: pwsh
+        run: ./tools/scripts/Validate-Workspace.ps1
+      - name: Check whitespace
+        shell: pwsh
+        run: git show --format= --check HEAD
