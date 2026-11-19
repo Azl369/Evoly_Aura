@@ -16,6 +16,7 @@
 
 struct Memory {
     long long privateWs = -1, privateBytes = -1, ws = -1, handles = -1, gdi = -1, user = -1;
+    long long peakCommit = -1, peakWs = -1;
     unsigned long long cpu = 0;
 };
 struct Process {
@@ -36,6 +37,8 @@ struct Process {
         if (GetProcessMemoryInfo(handle, reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&counters), sizeof(counters))) {
             out.privateBytes = static_cast<long long>(counters.PrivateUsage);
             out.ws = static_cast<long long>(counters.WorkingSetSize);
+            out.peakCommit = static_cast<long long>(counters.PeakPagefileUsage);
+            out.peakWs = static_cast<long long>(counters.PeakWorkingSetSize);
         }
         bool available = false;
         for (int retry = 0; retry < 5; ++retry) {
@@ -135,7 +138,7 @@ int wmain(int argc, wchar_t** argv) {
         Gpu gpu;
         file << "elapsed_s,pid,private_ws_bytes,private_bytes,working_set_bytes,cpu_percent,handles,gdi,user,"
             "gpu_dedicated_bytes,gpu_shared_bytes,dwm_private_bytes,dwm_working_set_bytes,"
-            "dwm_gpu_dedicated_bytes,dwm_gpu_shared_bytes,system_commit_bytes\n";
+            "dwm_gpu_dedicated_bytes,dwm_gpu_shared_bytes,system_commit_bytes,peak_commit_bytes,peak_working_set_bytes\n";
         auto start = std::chrono::steady_clock::now(), previous = start;
         auto prior = process.Read();
         DWORD processors = std::max(DWORD(1), GetActiveProcessorCount(ALL_PROCESSOR_GROUPS));
@@ -158,7 +161,7 @@ int wmain(int argc, wchar_t** argv) {
                 << gpu.Sum(gpu.dedicated, pid) << ',' << gpu.Sum(gpu.shared, pid) << ','
                 << dm.privateBytes << ',' << dm.ws << ',' << gpu.Sum(gpu.dedicated, dwmPid) << ','
                 << gpu.Sum(gpu.shared, dwmPid) << ','
-                << uint64_t(system.CommitTotal) * system.PageSize << '\n';
+                << uint64_t(system.CommitTotal) * system.PageSize << ',' << memory.peakCommit << ',' << memory.peakWs << '\n';
             file.flush();
             previous = now; prior = memory;
         }

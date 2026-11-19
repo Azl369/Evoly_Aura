@@ -77,6 +77,8 @@ metadata.local.json 记录提交、工作区是否干净、二进制哈希、硬
 快速排查可减少 Seconds / WarmupSeconds / BaselineSeconds / Repetitions；
 必须在报告中标明探索性短测，不能当成完整 B0。
 当前每秒采样可能遗漏亚秒级启动和解码峰值；精确峰值需要后续 ETW 补测。
+新版采样器另记 Windows 的 PeakPagefileUsage / PeakWorkingSetSize，分别给出进程提交与总工作集峰值；
+这仍不能分离解码归因、私有工作集峰值或 DWM/驱动峰值。旧版数据缺少的字段保留缺测。
 DWM 进程内存若因权限不可读显示 -1，不当成 0。
 GPU counter 是各适配器实例之和，不能与 CPU 计数器直接相加。
 

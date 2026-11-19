@@ -11,6 +11,7 @@ New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
 $taskReference = New-Object System.Windows.Forms.Form
 $taskReference.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
 $taskReference.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+$taskReference.TopMost = $true
 $taskReference.Location = New-Object System.Drawing.Point(24,24)
 $taskReference.ClientSize = New-Object System.Drawing.Size(900,600)
 $taskGrid = New-Object System.Drawing.Bitmap(900,600)
