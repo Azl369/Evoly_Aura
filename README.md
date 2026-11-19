@@ -2,15 +2,30 @@
 
 面向 Windows 的低内存玻璃桌面空间：桌面陈列、悬浮 HUD、自由编排。
 
-**当前阶段：工作区和计划已建立；尚未实现应用，也没有实测性能数据。**
+**当前阶段：原生桌面效果与交互框架已实现；先完善效果，再统一做性能验收。**
 
 项目名称为 Evoly Aura，目录与远端仓库名称统一为 Evoly_Aura。
 远端仓库：[Azl369/Evoly_Aura](https://github.com/Azl369/Evoly_Aura)（公开，已完成首次同步）。
 
+![原生桌面效果框架](assets/screenshots/desktop-framework.png)
+
+截图来自实际原生窗口，间隙使用巡检用渐变背景，不修改 Windows 壁纸。
+
+## 启动与唤起
+
+双击 [Start-Aura.cmd](Start-Aura.cmd)，默认驻留桌面，不覆盖普通应用；缺少产物时先构建。
+托盘单击始终唤起卡片；右键「隐藏卡片」可收起。Ctrl+Alt+F10 切换显示/隐藏，切换到其他应用或按 Esc 后回到桌面。
+普通悬浮不永久置顶；只有主动置顶的单卡与编辑布局时的卡片保持最前。
+当前可操作：七块玻璃卡片、编辑/锁定、拖动/吸附/缩放、便签编辑与保存、
+专注计时、四套强调色与玻璃浓度、桌面/悬浮切换、布局重启恢复。
+
+详细用法见 [桌面框架说明](docs/development/DESKTOP_WORKSPACE.md)，
+阶段范围见 [效果框架计划](docs/plans/VISUAL_FRAMEWORK.md)。
+
 ## 产品方向
 
 - 桌面态：文件夹、快捷方式和信息面板融入壁纸。
-- 悬浮态：选中的面板成为置顶 HUD，支持吸附和闲置淡化。
+- 悬浮态：按需查看普通悬浮窗口，明确置顶的单卡才成为置顶 HUD。
 - 编辑态：调整布局、尺寸和主题，完成后锁定布局。
 - 低占用优先：原生常驻核心，按事件刷新，共享资源，有界缓存。
 
@@ -30,22 +45,24 @@ Flutter 编辑器仅保留为未来备选，不属于当前依赖。
 9. [测试与验收](docs/testing/VALIDATION.md)
 10. [Git / GitHub 工作流](docs/development/GIT_WORKFLOW.md)
 11. [交付与远端状态](docs/development/DELIVERY_STATUS.md)
+12. [原生构建、运行与测量](docs/development/NATIVE_BUILD.md)
+13. [桌面框架使用与验证](docs/development/DESKTOP_WORKSPACE.md)
 
 ## 工作区概览
 
 ~~~text
 Evoly_Aura/
-  apps/host/                原生常驻入口（预留）
+  apps/host/                Aura 桌面入口与独立 P0 探针
   apps/editor/              按需编辑器（预留）
-  src/                      核心、平台、渲染、组件、存储（预留）
-  include/aura/             稳定跨模块接口（预留）
+  src/                      布局、图像、Windows 窗口、玻璃渲染与本地存储
+  include/aura/             P0 模块接口
   assets/                   图标、主题；不存大体积演示媒体
   config/examples/          可公开的配置格式草案
   docs/                     产品、设计决策、计划和验收
-  tests/                    单元、集成、性能测试（预留）
+  tests/                    图像单元测试；集成与性能测试预留
   benchmarks/               测量协议与汇总，不存机器原始大文件
   tools/scripts/            工作区检查与后续开发工具
-  cmake/                    后续构建模块（预留）
+  cmake/                    后续构建辅助模块（预留）
   packaging/windows/        后续 Windows 发布配置（预留）
   .github/                  文档检查与协作模板
 ~~~
@@ -58,8 +75,9 @@ Windows PowerShell 5.1 或 PowerShell 7：
 powershell -NoProfile -File .\tools\scripts\Validate-Workspace.ps1
 ~~~
 
-这只检查文档、目录约定、相对链接和 JSON；当前没有 CMake 构建入口或应用可执行文件。
-运行时与工具链要求会在 P0 实验完成后固定。
+文档检查之外，可运行 tools/scripts/Build-Native.ps1 构建 Release 并执行 core 测试。
+tools/scripts/Test-Workspace.ps1 验证实际桌面交互与重启恢复；
+tools/scripts/Test-Probe.ps1 检查原有探针。此阶段不追加性能基准。
 
 ## 开发约定
 

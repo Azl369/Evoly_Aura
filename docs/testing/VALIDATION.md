@@ -2,8 +2,22 @@
 
 ## 当前阶段
 
+当前优先桌面效果和功能验证，完整性能验收按用户要求后置。
+窗口层级回归由 Test-WindowLayers.ps1 覆盖：普通应用能盖住卡片、浮层实际透出下方内容、
+隐藏后切换模式恢复显示、托盘临时唤起后自动返回，以及单卡置顶不扩散至其他卡片。
+
+`Test-WindowLayers.ps1` 的托盘回调是合成消息；真实通知区由 `Test-RealTray.ps1` 单独验证，不能相互替代。
+真实托盘检查菜单隐藏、切换应用、重复单击、通知区转应用和 Win+D 后再次唤起，每次断言七张卡片均可实际命中。
+
+Test-Workspace.ps1 检查七窗口、真实拖动/缩放、主题、专注、中文便签、桌面/HUD、
+隐藏/恢复、重复启动及重启持久化。Capture-Workspace.ps1 检查实际原生界面截图。
+
 执行 tools/scripts/Validate-Workspace.ps1，检查必需文件、预留目录、文档相对链接和 JSON。
-GitHub Actions 使用同一入口。当前没有原生代码，不声称通过应用构建或性能测试。
+GitHub Actions 使用同一入口。
+原生代码通过 Build-Native.ps1 构建 Release 与 CTest；Test-Probe.ps1 检查六组窗口/材质正常绘制并退出。
+原生 CI 只构建与运行 core 测试，不在托管 runner 宣称桌面视觉或精确性能通过。
+Test-Lifecycle.ps1 将实际重绘与两批切换后的资源检查结合；Test-Visual.ps1 用自建网格检查模糊。
+以上脚本的存在不代表每项已验收，执行结果与缺测项记录在阶段性能报告中。
 
 ## 原型与后续自动化
 
