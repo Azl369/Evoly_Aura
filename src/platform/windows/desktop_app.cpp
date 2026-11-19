@@ -12,11 +12,13 @@
 namespace aura {
 namespace {
 constexpr UINT trayMessage=WM_APP+1,controlMessage=WM_APP+2;
+constexpr UINT returnToDesktopMessage=WM_APP+3;
 constexpr UINT minuteTimer=1,focusTimer=2,durationTimer=3;
 struct DesktopPanel {
     HWND window{};
     WidgetPlacement placement;
     WidgetAction hovered=WidgetAction::none;
+    bool attached=false;
 };
 HWND FindDesktopSurface() {
     HWND progman=FindWindowW(L"Progman",nullptr);
@@ -52,9 +54,10 @@ public:
     std::unique_ptr<Renderer> renderer;
     std::unique_ptr<WorkspaceStore> store;
     std::vector<DesktopPanel> panels;
-    HWND controller{},noteEditor{},noteInput{};
+    HWND controller{},noteEditor{},noteInput{},desktopHost{};
     HANDLE instance{};
     bool editing=false,desktop=true,visible=true,focusRunning=false,failed=false,warned=false;
+    bool temporaryReveal=false,changingLayer=false,menuOpen=false,revealActivated=false;
     int theme=0,checkedTasks=0,remaining=1500;
     float opacity=.54f;
     std::wstring note;
@@ -76,7 +79,8 @@ public:
     }
     void Log(const char* event) { if (log) { log<<event<<'\n'; log.flush(); } }
     float Scale() const { return systemDpi/96.f; }
-    bool OnDesktop() const { return desktop && !editing; }
+    bool DesktopRequested() const { return desktop && !editing && !temporaryReveal; }
+    bool OnDesktop() const { return DesktopRequested() && IsWindow(desktopHost) && IsWindowVisible(desktopHost); }
     DesktopPanel* Panel(HWND hwnd) {
         for (auto& panel:panels) if (panel.window==hwnd) return &panel;
         return nullptr;
@@ -88,7 +92,8 @@ public:
     }
     void Save() {
         for (auto& panel:panels) {
-            RECT r{}; GetWindowRect(panel.window,&r);
+            RECT r{};
+            if (!IsWindow(panel.window) || !GetWindowRect(panel.window,&r)) continue;
             auto& b=panel.placement.bounds;
             b={float(r.left-work.left)/Scale(),float(r.top-work.top)/Scale(),
                 float(r.right-r.left)/Scale(),float(r.bottom-r.top)/Scale()};
@@ -105,6 +110,7 @@ public:
     WidgetView View(const DesktopPanel& panel) const {
         WidgetView view;
         view.kind=panel.placement.kind; view.editing=editing; view.desktop=OnDesktop();
+        view.sampleWallpaper=panel.attached; view.temporaryReveal=temporaryReveal;
         view.theme=theme; view.opacity=opacity; view.note=note; view.hovered=panel.hovered;
         view.focusRunning=focusRunning; view.focusSeconds=remaining; view.checkedTasks=checkedTasks;
         return view;
@@ -124,48 +130,103 @@ public:
         Shell_NotifyIconW(NIM_ADD,&data);
     }
     void SetMode() {
-        HWND parent=OnDesktop()?FindDesktopSurface():nullptr;
-        if (OnDesktop() && !parent) { desktop=false; Log("desktop_fallback_hud"); }
+        changingLayer=true;
+        struct TransitionGuard { bool& flag; ~TransitionGuard() { flag=false; } } guard{changingLayer};
+        desktopHost=DesktopRequested()?FindDesktopSurface():nullptr;
+        if (DesktopRequested() && !desktopHost) Log("desktop_fallback_normal");
         for (auto& panel:panels) {
             if (!IsWindow(panel.window)) continue;
-            bool child=OnDesktop() && parent && !panel.placement.pinned;
+            auto layer=ResolveWindowLayer(DesktopRequested(),desktopHost!=nullptr,editing,panel.placement.pinned);
+            bool child=layer==WindowLayer::desktop;
             RECT r{}; GetWindowRect(panel.window,&r);
+            ShowWindow(panel.window,SW_HIDE);
             SetParent(panel.window,nullptr);
             auto style=GetWindowLongPtrW(panel.window,GWL_STYLE)&~(WS_CHILD|WS_POPUP);
-            SetWindowLongPtrW(panel.window,GWL_STYLE,style|(child?WS_CHILD:WS_POPUP));
+            SetWindowLongPtrW(panel.window,GWL_STYLE,style|WS_POPUP);
+            // Explicitly clear the old topmost band before reparenting.
+            SetWindowPos(panel.window,HWND_NOTOPMOST,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
             if (child) {
+                SetWindowLongPtrW(panel.window,GWL_STYLE,style|WS_CHILD);
                 SetLastError(0);
-                HWND prior=SetParent(panel.window,parent);
+                HWND prior=SetParent(panel.window,desktopHost);
                 if (!prior && GetLastError()!=0) {
                     child=false; Log("panel_attach_fallback");
                     SetParent(panel.window,nullptr);
                     SetWindowLongPtrW(panel.window,GWL_STYLE,style|WS_POPUP);
                 }
             }
+            panel.attached=child;
             POINT p{r.left,r.top};
-            if (child) ScreenToClient(parent,&p);
-            SetWindowPos(panel.window,child?HWND_BOTTOM:HWND_TOPMOST,p.x,p.y,r.right-r.left,r.bottom-r.top,
-                SWP_NOACTIVATE|SWP_FRAMECHANGED);
+            if (child) ScreenToClient(desktopHost,&p);
+            HWND order=child?HWND_TOP:layer==WindowLayer::topmost?HWND_TOPMOST:HWND_NOTOPMOST;
+            SetWindowPos(panel.window,order,p.x,p.y,r.right-r.left,r.bottom-r.top,
+                SWP_NOACTIVATE|SWP_FRAMECHANGED|(visible?SWP_SHOWWINDOW:0));
         }
         InvalidateAll();
         Log(OnDesktop()?"desktop_mode":"floating_mode");
     }
+    void EnsurePanels() {
+        if (std::all_of(panels.begin(),panels.end(),[](const auto& p){return IsWindow(p.window)!=FALSE;})) return;
+        auto placements=Placements();
+        for (auto& p:panels) if (IsWindow(p.window)) DestroyWindow(p.window);
+        renderer->ReleaseAll(); CreatePanels(placements); Log("panels_recreated");
+    }
     void Show(bool show) {
         visible=show;
+        if (!show) { temporaryReveal=false; revealActivated=false; }
+        if (show) EnsurePanels();
         if (show && !panels.empty()) renderer->LoadBackground(panels.front().window);
+        if (show) SetMode();
         for (auto& panel:panels) ShowWindow(panel.window,show?SW_SHOWNOACTIVATE:SW_HIDE);
-        if (show) { InvalidateAll(); ScheduleMinute(); }
+        if (show) {
+            InvalidateAll();
+            for (auto& panel:panels) UpdateWindow(panel.window);
+            ScheduleMinute();
+        }
         else { KillTimer(controller,minuteTimer); renderer->ReleaseAll(); }
         Log(show?"shown":"hidden");
+    }
+    void RaiseFloating() {
+        for (auto& p:panels) if (IsWindow(p.window) && !GetParent(p.window))
+            SetWindowPos(p.window,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
+        if (!panels.empty() && !GetParent(panels.front().window)) SetForegroundWindow(panels.front().window);
+    }
+    bool OwnsForeground() const {
+        DWORD process=0;
+        GetWindowThreadProcessId(GetForegroundWindow(),&process);
+        return process==GetCurrentProcessId();
+    }
+    void Reveal() {
+        temporaryReveal=desktop && !editing;
+        revealActivated=false;
+        Show(true); RaiseFloating(); revealActivated=OwnsForeground(); Log("workspace_revealed");
+    }
+    void ReturnToDesktop() {
+        if (!temporaryReveal) return;
+        temporaryReveal=false; Show(true); Log("reveal_returned_to_desktop");
+    }
+    void ToggleVisibility() {
+        if (visible && (temporaryReveal || !desktop || editing)) Show(false);
+        else Reveal();
+    }
+    void ChangeMode(bool wantDesktop) {
+        desktop=wantDesktop; editing=false; temporaryReveal=false;
+        Show(true);
+        if (!wantDesktop) RaiseFloating();
+        Save();
+    }
+    void TogglePin(DesktopPanel& panel) {
+        panel.placement.pinned=!panel.placement.pinned; SetMode(); Save();
     }
     void ScheduleMinute() {
         SYSTEMTIME time{}; GetLocalTime(&time);
         SetTimer(controller,minuteTimer,60000-time.wSecond*1000-time.wMilliseconds,nullptr);
     }
     void SetEditing(bool edit) {
+        temporaryReveal=false;
         editing=edit;
         if (!edit) { checkedTasks|=1; Save(); }
-        SetMode();
+        Show(true);
         Log(edit?"edit_started":"edit_finished");
     }
     void Reset() {
@@ -194,7 +255,7 @@ public:
         switch (action) {
         case WidgetAction::editLayout: SetEditing(!editing); break;
         case WidgetAction::toggleMode:
-            desktop=!OnDesktop(); editing=false; SetMode(); Save(); break;
+            ChangeMode(!OnDesktop()); break;
         case WidgetAction::resetLayout: Reset(); break;
         case WidgetAction::editNote: EditNote(); break;
         case WidgetAction::focus:
@@ -229,18 +290,21 @@ public:
     void Menu(HWND owner) {
         HMENU menu=CreatePopupMenu();
         AppendMenuW(menu,MF_STRING|(editing?MF_CHECKED:0),104,L"编辑布局");
-        AppendMenuW(menu,MF_STRING,OnDesktop()?103:102,OnDesktop()?L"切为悬浮模式":L"回到桌面模式");
+        AppendMenuW(menu,MF_STRING,desktop?103:102,desktop?L"切为悬浮模式":L"回到桌面模式");
         if (auto* panel=Panel(owner); panel && panel->placement.kind!=WidgetKind::toolbar)
             AppendMenuW(menu,MF_STRING|(panel->placement.pinned?MF_CHECKED:0),108,L"单独置顶此卡片");
         AppendMenuW(menu,MF_STRING,105,L"重置布局");
-        AppendMenuW(menu,MF_STRING,visible?101:100,visible?L"隐藏桌面卡片":L"显示桌面卡片");
+        AppendMenuW(menu,MF_STRING,100,L"唤起卡片");
+        if (visible) AppendMenuW(menu,MF_STRING,101,L"隐藏卡片");
         AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
         AppendMenuW(menu,MF_STRING,107,L"退出 Evoly Aura");
         POINT point{}; GetCursorPos(&point); SetForegroundWindow(controller);
+        menuOpen=true;
         UINT command=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,controller,nullptr);
+        menuOpen=false;
         DestroyMenu(menu);
         if (command==108) {
-            if (auto* panel=Panel(owner)) { panel->placement.pinned=!panel->placement.pinned; SetMode(); Save(); }
+            if (auto* panel=Panel(owner)) TogglePin(*panel);
         } else if (command) SendMessageW(controller,controlMessage,command,0);
         PostMessageW(controller,WM_NULL,0,0);
     }
@@ -289,6 +353,14 @@ public:
         InvalidateRect(hwnd,nullptr,FALSE); UpdateWindow(hwnd);
     }
     LRESULT Message(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
+        if (msg==WM_ACTIVATEAPP && wp && temporaryReveal && !changingLayer) revealActivated=true;
+        if (msg==WM_ACTIVATEAPP && !wp && temporaryReveal && revealActivated && !changingLayer && !menuOpen)
+            PostMessageW(controller,returnToDesktopMessage,0,0);
+        if (msg==WM_KEYDOWN && wp==VK_ESCAPE) {
+            if (temporaryReveal) ReturnToDesktop();
+            else if (editing) SetEditing(false);
+            return 0;
+        }
         if (hwnd==controller) {
             if (msg==taskbarCreated && taskbarCreated) {
                 AddTray();
@@ -298,25 +370,30 @@ public:
                     for (auto& p:panels) if (IsWindow(p.window)) DestroyWindow(p.window);
                     renderer->ReleaseAll(); CreatePanels(placements);
                 }
-                SetMode(); Show(visible); Log("shell_recovered"); return 0;
+                Show(visible); Log("shell_recovered"); return 0;
             }
             switch (msg) {
             case trayMessage:
-                if (lp==WM_LBUTTONUP) Show(!visible);
+                if (lp==WM_LBUTTONUP) ToggleVisibility();
                 if (lp==WM_RBUTTONUP) Menu(hwnd);
                 return 0;
             case controlMessage:
-                if (wp==100 || wp==101) Show(wp==100);
-                else if (wp==102 || wp==103) { desktop=wp==102; editing=false; SetMode(); }
+                if (wp==100) Reveal();
+                else if (wp==101) Show(false);
+                else if (wp==102 || wp==103) ChangeMode(wp==102);
                 else if (wp==104) SetEditing(!editing);
                 else if (wp==105) Reset();
                 else if (wp==106) Action(WidgetAction(int(WidgetAction::theme0)+(theme+1)%4));
                 else if (wp==107) { Save(); PostQuitMessage(0); }
                 else if (wp==109) Action(WidgetAction::focus);
                 else if (wp==110) EditNote();
+                else if (wp>=120 && wp<120+panels.size()) TogglePin(panels[size_t(wp-120)]);
+                return 0;
+            case returnToDesktopMessage:
+                if (!OwnsForeground()) ReturnToDesktop();
                 return 0;
             case WM_HOTKEY:
-                if (wp==1) Show(!visible);
+                if (wp==1) ToggleVisibility();
                 else if (wp==2) Action(WidgetAction::toggleMode);
                 else if (wp==3) { Save(); PostQuitMessage(0); }
                 else if (wp==4) SetEditing(!editing);
@@ -430,7 +507,7 @@ public:
     }
     void EditNote() {
         if (noteEditor) { SetForegroundWindow(noteEditor); return; }
-        noteEditor=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_TOPMOST,L"AuraNoteEditor",L"编辑便签 · Evoly Aura",
+        noteEditor=CreateWindowExW(WS_EX_TOOLWINDOW|(editing?WS_EX_TOPMOST:0),L"AuraNoteEditor",L"编辑便签 · Evoly Aura",
             WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_THICKFRAME,work.left+280,work.top+180,560,380,
             nullptr,nullptr,GetModuleHandleW(nullptr),this);
         if (!noteEditor) throw std::runtime_error("Note editor creation failed");
@@ -468,8 +545,9 @@ public:
         if (GetLastError()==ERROR_ALREADY_EXISTS) {
             HWND existing=FindWindowW(L"AuraWorkspaceController",nullptr);
             if (existing) {
+                DWORD process=0; GetWindowThreadProcessId(existing,&process);
+                if (process) AllowSetForegroundWindow(process);
                 DWORD_PTR result{};
-                if (options.preview) SendMessageTimeoutW(existing,controlMessage,103,0,SMTO_ABORTIFHUNG,2000,&result);
                 SendMessageTimeoutW(existing,controlMessage,100,0,SMTO_ABORTIFHUNG,2000,&result);
             }
             return 0;
@@ -501,7 +579,8 @@ public:
         RegisterHotKey(controller,4,MOD_CONTROL|MOD_ALT|MOD_NOREPEAT,VK_F9);
         CreatePanels(placements);
         renderer->LoadBackground(panels.front().window);
-        SetMode(); Show(true);
+        Show(true);
+        if (options.preview) RaiseFloating();
         if (options.duration) SetTimer(controller,durationTimer,options.duration*1000,nullptr);
         Log("workspace_ready");
         MSG message{}; BOOL result{};

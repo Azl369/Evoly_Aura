@@ -7,6 +7,11 @@ void Require(bool value,const char* message) { if (!value) throw std::runtime_er
 int wmain(int argc,wchar_t** argv) {
     try {
         if (argc!=2) throw std::runtime_error("Pass an out-of-tree test directory");
+        Require(aura::ResolveWindowLayer(true,true,false,false)==aura::WindowLayer::desktop,"Default belongs to desktop");
+        Require(aura::ResolveWindowLayer(false,true,false,false)==aura::WindowLayer::floating,"Floating is not topmost");
+        Require(aura::ResolveWindowLayer(true,false,false,false)==aura::WindowLayer::floating,"Desktop failure does not force topmost");
+        Require(aura::ResolveWindowLayer(true,true,false,true)==aura::WindowLayer::topmost,"Explicit pin owns topmost");
+        Require(aura::ResolveWindowLayer(true,true,true,false)==aura::WindowLayer::topmost,"Editing is temporary topmost");
         auto widgets=aura::DefaultWorkspace(1600,1000);
         Require(widgets.size()==7,"Seven workspace panels");
         for (const auto& widget:widgets) {

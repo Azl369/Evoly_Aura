@@ -3,6 +3,11 @@
 #include <cmath>
 
 namespace aura {
+WindowLayer ResolveWindowLayer(bool desktopRequested,bool hostAvailable,bool editing,bool pinned) {
+    if (editing || pinned) return WindowLayer::topmost;
+    if (desktopRequested && hostAvailable) return WindowLayer::desktop;
+    return WindowLayer::floating;
+}
 std::vector<WidgetPlacement> DefaultWorkspace(float width, float height) {
     float x = std::max(20.f, (width - 1160.f) / 2);
     float y = std::max(24.f, (height - 620.f) / 2 - 16);

@@ -6,6 +6,8 @@
 
 namespace aura {
 enum class WidgetKind { toolbar, clock, launcher, focus, notes, checklist, appearance };
+enum class WindowLayer { desktop, floating, topmost };
+WindowLayer ResolveWindowLayer(bool desktopRequested, bool hostAvailable, bool editing, bool pinned);
 enum class WidgetAction {
     none, editLayout, toggleMode, resetLayout, editNote, focus,
     launchExplorer, launchDownloads, launchDocuments, launchGithub, launchSettings, launchRecycle,
@@ -16,6 +18,7 @@ struct WidgetPlacement { WidgetKind kind{}; DipRect bounds; bool pinned = false;
 struct WidgetView {
     WidgetKind kind{};
     bool editing = false, desktop = true, focusRunning = false;
+    bool sampleWallpaper = true, temporaryReveal = false;
     int theme = 0, focusSeconds = 1500, checkedTasks = 0;
     float opacity = .54f;
     WidgetAction hovered = WidgetAction::none;

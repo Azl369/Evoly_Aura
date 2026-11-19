@@ -41,7 +41,7 @@ void Renderer::DrawWidget(ID2D1RenderTarget* target, HWND window, const WidgetVi
         format->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING);
     };
     auto panel=D2D1::RoundedRect(D2D1::RectF(1,1,w-1,h-1),22,22);
-    if (!wallpaper_.image.pixels.empty()) {
+    if (view.sampleWallpaper && !wallpaper_.image.pixels.empty()) {
         if (!wallpaperBitmap_) {
             const auto& image=wallpaper_.image;
             Check(target->CreateBitmap(D2D1::SizeU(image.width,image.height),image.pixels.data(),image.width*4,
@@ -57,7 +57,7 @@ void Renderer::DrawWidget(ID2D1RenderTarget* target, HWND window, const WidgetVi
                 float(wallpaper_.monitor.top-screen.top)/scale));
         target->FillRoundedRectangle(panel,image.Get());
         brush->SetColor(D2D1::ColorF(base,view.opacity));
-    } else brush->SetColor(D2D1::ColorF(base,.94f));
+    } else brush->SetColor(D2D1::ColorF(base,view.sampleWallpaper?.94f:.58f+.38f*view.opacity));
     target->FillRoundedRectangle(panel,brush.Get());
     D2D1_GRADIENT_STOP stops[]{
         {0,D2D1::ColorF(0xffffff,.09f)},{1,D2D1::ColorF(0xffffff,.012f)}};
@@ -121,7 +121,7 @@ void Renderer::DrawWidget(ID2D1RenderTarget* target, HWND window, const WidgetVi
         target->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(44,38),11,11),brush.Get(),1.5f);
         line(36,45,52,31,accent,1,1.5f);
         text(L"Evoly Aura",3,D2D1::RectF(80,16,280,42));
-        text(view.editing?L"拖动标题区，右下角调整大小":L"我的桌面 / 浮光",0,D2D1::RectF(80,46,450,64),muted);
+        text(view.editing?L"拖动标题区，右下角调整大小":view.temporaryReveal?L"临时唤起 · Esc 回到桌面":L"我的桌面 / 浮光",0,D2D1::RectF(80,46,450,64),muted);
         button(WidgetAction::editLayout,view.editing?L"完成编辑":L"编辑布局",view.editing);
         button(WidgetAction::toggleMode,view.desktop?L"切为悬浮模式":L"回到桌面模式");
         button(WidgetAction::resetLayout,L"重置布局");

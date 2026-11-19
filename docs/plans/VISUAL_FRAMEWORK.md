@@ -27,8 +27,9 @@
 
 ## 验收入口
 
-双击根目录 Start-Aura.cmd，默认以悬浮预览显示。
-也可运行 Aura.exe 进入桌面模式，再用 Win+D 查看桌面。
+双击根目录 Start-Aura.cmd 启动桌面卡片。
+默认启动已于 2026-11-20 调整为桌面驻留，避免遮挡应用；显式 -Preview 才进入普通悬浮。
+托盘或 Ctrl+Alt+F10 可临时唤起，Esc/切换应用后回到桌面。
 快捷键：Ctrl+Alt+F9 编辑；F10 显示/隐藏；F11 桌面/悬浮；F12 退出。
 
 使用 [桌面框架说明](../development/DESKTOP_WORKSPACE.md) 了解实现范围。
