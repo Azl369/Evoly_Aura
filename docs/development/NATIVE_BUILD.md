@@ -49,10 +49,14 @@ API 成功不等同于已经证明实时模糊；需视觉与背景变化对照�
 
 ~~~powershell
 .\tools\scripts\Test-Probe.ps1
+.\tools\scripts\Test-Lifecycle.ps1 -Backend software
+.\tools\scripts\Test-Lifecycle.ps1 -Backend composition
 .\tools\scripts\Validate-Workspace.ps1
 ~~~
 
 Test-Probe 顺序执行六个 UI 冒烟场景；不要在已有实例运行时启动。
+Test-Lifecycle 分两批执行 200 次桌面/HUD/隐藏/恢复循环，每次恢复后强制实际绘制；
+比较批次间句柄与 GUI 资源是否稳定。此检查不替代长稳和视觉层级验收。
 GitHub CI 只执行 Release 编译和 core 测试，不把托管 CI 当作桌面视觉或精确性能环境。
 
 ## 测量
@@ -78,3 +82,8 @@ GPU counter 是各适配器实例之和，不能与 CPU 计数器直接相加。
 
 Capture-Probe.ps1 可仅截取一个原型面板进行本机视觉检查。
 截图可能包含用户壁纸，默认不公开提交。
+Test-Visual.ps1 在自建双色网格上顺序运行两种材质，以检查真实背景透射与模糊。
+它会短暂显示测试窗口，结束后自动关闭；仅在没有基准运行时执行。
+
+资源细节见 [P0 实现说明](../architecture/P0_IMPLEMENTATION.md)，
+默认后端取舍见 [ADR-0002](../architecture/adr/0002-p0-rendering-backends.md)。

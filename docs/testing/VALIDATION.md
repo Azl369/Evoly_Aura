@@ -6,6 +6,8 @@
 GitHub Actions 使用同一入口。
 原生代码通过 Build-Native.ps1 构建 Release 与 CTest；Test-Probe.ps1 检查六组窗口/材质正常绘制并退出。
 原生 CI 只构建与运行 core 测试，不在托管 runner 宣称桌面视觉或精确性能通过。
+Test-Lifecycle.ps1 将实际重绘与两批切换后的资源检查结合；Test-Visual.ps1 用自建网格检查模糊。
+以上脚本的存在不代表每项已验收，执行结果与缺测项记录在阶段性能报告中。
 
 ## 原型与后续自动化
 

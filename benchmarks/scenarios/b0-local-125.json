@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "id": "B0-local-125",
+  "status": "measurement-variant",
+  "baseScenario": "B0",
+  "deviations": [
+    "Actual desktop uses 125% DPI; do not change user display settings or claim the 100% B0 scenario passed.",
+    "DWM process CPU-memory counters may be inaccessible.",
+    "Dynamic background activity is not fully isolated."
+  ],
+  "platform": {
+    "osBuild": "26200",
+    "displayPixels": {
+      "width": 2560,
+      "height": 1440
+    },
+    "dpiScale": 1.25,
+    "monitorCount": 1
+  },
+  "panels": {
+    "count": 6,
+    "sizeDip": {
+      "width": 400,
+      "height": 240
+    },
+    "sizePhysicalPixels": {
+      "width": 500,
+      "height": 300
+    }
+  },
+  "backend": "software",
+  "material": "wallpaper",
+  "measurement": {
+    "baselineSeconds": 60,
+    "warmupSeconds": 60,
+    "steadySeconds": 300,
+    "sampleIntervalSeconds": 1,
+    "repetitions": 3
+  }
+}

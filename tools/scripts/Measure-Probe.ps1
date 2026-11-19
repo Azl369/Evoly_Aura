@@ -14,6 +14,7 @@ param(
     [switch]$Exercise
 )
 $ErrorActionPreference = 'Stop'
+if (($WarmupSeconds + $Seconds + 15) -gt 86400) { throw 'Total probe lifetime must not exceed 86400 seconds.' }
 if (Get-Process AuraProbe -ErrorAction SilentlyContinue) { throw 'Close the existing AuraProbe before starting a controlled run.' }
 $taskProbe = Join-Path $BuildRoot 'Release\AuraProbe.exe'
 $taskSampler = Join-Path $BuildRoot 'Release\AuraMetrics.exe'
@@ -67,6 +68,9 @@ try {
             if (-not $taskProcess.WaitForExit(20000)) { throw 'Probe did not exit at its configured duration.' }
             if ($taskProcess.ExitCode -ne 0) { throw "Probe failed with exit code $($taskProcess.ExitCode)." }
             if (-not (Select-String -LiteralPath $taskEvents -Pattern '"event":"ready"' -Quiet)) { throw 'Missing readiness event.' }
+            if ($Material -eq 'wallpaper' -and -not (Select-String -LiteralPath $taskEvents -Pattern '"event":"static_wallpaper_cached"' -Quiet)) {
+                throw 'Requested wallpaper cache fell back; do not label this as a wallpaper benchmark.'
+            }
             Write-Output "Completed run $taskRun."
         } finally {
             if (-not $taskProcess.HasExited) { Stop-Process -Id $taskProcess.Id }

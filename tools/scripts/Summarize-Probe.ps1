@@ -9,9 +9,12 @@ if ($taskMetadata.status -ne 'completed') { throw 'Cannot summarize an incomplet
 function Get-AuraStats($Rows, [string]$Field) {
     $taskValues = @($Rows | ForEach-Object { [double]$_.$Field } | Where-Object { $_ -ge 0 } | Sort-Object)
     if ($taskValues.Count -eq 0) { return $null }
+    $taskMiddle = [int][Math]::Floor($taskValues.Count / 2)
+    $taskMedian = $taskValues[$taskMiddle]
+    if (($taskValues.Count % 2) -eq 0) { $taskMedian = ($taskValues[$taskMiddle - 1] + $taskMedian) / 2 }
     return [ordered]@{
         samples = $taskValues.Count
-        median = $taskValues[[Math]::Floor(($taskValues.Count - 1) / 2)]
+        median = $taskMedian
         p95 = $taskValues[[Math]::Ceiling($taskValues.Count * 0.95) - 1]
         max = $taskValues[-1]
         min = $taskValues[0]
@@ -23,7 +26,9 @@ $taskMetrics = @('private_ws_bytes','private_bytes','working_set_bytes','cpu_per
 $taskRuns = @()
 for ($taskIndex = 1; $taskIndex -le $taskMetadata.repetitions; $taskIndex++) {
     $taskRows = @(Import-Csv (Join-Path $RunDirectory "samples-$taskIndex.csv"))
-    $taskSteady = @($taskRows | Where-Object { [double]$_.elapsed_s -gt $taskMetadata.warmupSeconds })
+    # The sampler has a fixed 1-second cadence. Skip warmup intervals by index;
+    # scheduler jitter makes the 60th timestamp slightly greater than 60 seconds.
+    $taskSteady = @($taskRows | Select-Object -Skip ([int]$taskMetadata.warmupSeconds))
     if ($taskSteady.Count -ne $taskMetadata.seconds) { throw "Unexpected steady sample count in run $taskIndex." }
     $taskBaseline = @(Import-Csv (Join-Path $RunDirectory "baseline-$taskIndex.csv"))
     $taskStats = [ordered]@{}
