@@ -42,7 +42,8 @@ public static class AuraLayerRegression {
     }
     public static bool TrayClick() {
         UIntPtr result;var hwnd=FindWindow("AuraWorkspaceController",null);
-        return hwnd!=IntPtr.Zero && SendMessageTimeout(hwnd,0x8001,new UIntPtr(1),new IntPtr(0x0202),3,5000,out result)!=IntPtr.Zero;
+        // Synthetic VERSION_4 selection; Test-RealTray separately clicks the Shell.
+        return hwnd!=IntPtr.Zero && SendMessageTimeout(hwnd,0x8001,UIntPtr.Zero,new IntPtr((1<<16)|0x0400),3,5000,out result)!=IntPtr.Zero;
     }
     public static Panel[] Panels() {
         var panels=new List<Panel>();var seen=new HashSet<IntPtr>();
@@ -188,8 +189,11 @@ try {
     if (-not [AuraLayerRegression]::TrayClick()) { throw 'Tray callback did not reveal cards.' }
     Start-Sleep -Milliseconds 150
     Assert-AuraFloating
-    if (-not [AuraLayerRegression]::TrayClick()) { throw 'Tray callback did not hide the temporary reveal.' }
-    if (@([AuraLayerRegression]::Panels() | Where-Object Visible).Count) { throw 'Second tray click did not hide cards.' }
+    if (-not [AuraLayerRegression]::TrayClick()) { throw 'Repeated tray callback failed.' }
+    Start-Sleep -Milliseconds 150
+    Assert-AuraFloating
+    Invoke-AuraLayerCommand 101
+    if (@([AuraLayerRegression]::Panels() | Where-Object Visible).Count) { throw 'Explicit hide did not hide cards.' }
     if (-not [AuraLayerRegression]::TrayClick()) { throw 'Tray callback did not reveal cards a second time.' }
     Start-Sleep -Milliseconds 150
     Assert-AuraFloating

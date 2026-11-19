@@ -12,7 +12,7 @@
 namespace aura {
 namespace {
 constexpr UINT trayMessage=WM_APP+1,controlMessage=WM_APP+2;
-constexpr UINT returnToDesktopMessage=WM_APP+3;
+constexpr UINT returnToDesktopMessage=WM_APP+3,revealMessage=WM_APP+4;
 constexpr UINT minuteTimer=1,focusTimer=2,durationTimer=3;
 struct DesktopPanel {
     HWND window{};
@@ -56,8 +56,11 @@ public:
     std::vector<DesktopPanel> panels;
     HWND controller{},noteEditor{},noteInput{},desktopHost{};
     HANDLE instance{};
+    HWINEVENTHOOK foregroundHook{};
     bool editing=false,desktop=true,visible=true,focusRunning=false,failed=false,warned=false;
     bool temporaryReveal=false,changingLayer=false,menuOpen=false,revealActivated=false;
+    bool trayVersion4=false,revealQueued=false;
+    WPARAM revealGeneration=0;
     int theme=0,checkedTasks=0,remaining=1500;
     float opacity=.54f;
     std::wstring note;
@@ -70,6 +73,7 @@ public:
     RECT dragBounds{};
     std::chrono::steady_clock::time_point focusEnd;
     ~DesktopApp() {
+        if (foregroundHook) UnhookWinEvent(foregroundHook);
         if (noteEditor && IsWindow(noteEditor)) DestroyWindow(noteEditor);
         NOTIFYICONDATAW data{sizeof(data)}; data.hWnd=controller; data.uID=1;
         if (controller) Shell_NotifyIconW(NIM_DELETE,&data);
@@ -124,10 +128,14 @@ public:
     }
     void AddTray() {
         NOTIFYICONDATAW data{sizeof(data)};
-        data.hWnd=controller; data.uID=1; data.uFlags=NIF_ICON|NIF_MESSAGE|NIF_TIP;
+        data.hWnd=controller; data.uID=1; data.uFlags=NIF_ICON|NIF_MESSAGE|NIF_TIP|NIF_SHOWTIP;
         data.uCallbackMessage=trayMessage; data.hIcon=LoadIconW(nullptr,IDI_APPLICATION);
         wcscpy_s(data.szTip,L"Evoly Aura · 浮光桌面");
-        Shell_NotifyIconW(NIM_ADD,&data);
+        trayVersion4=false;
+        if (Shell_NotifyIconW(NIM_ADD,&data)) {
+            data.uVersion=NOTIFYICON_VERSION_4;
+            trayVersion4=Shell_NotifyIconW(NIM_SETVERSION,&data)!=FALSE;
+        }
     }
     void SetMode() {
         changingLayer=true;
@@ -187,19 +195,33 @@ public:
         Log(show?"shown":"hidden");
     }
     void RaiseFloating() {
+        // Acquire foreground permission before raising all sibling tool windows.
+        if (!panels.empty() && !GetParent(panels.front().window)) SetForegroundWindow(panels.front().window);
         for (auto& p:panels) if (IsWindow(p.window) && !GetParent(p.window))
             SetWindowPos(p.window,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
-        if (!panels.empty() && !GetParent(panels.front().window)) SetForegroundWindow(panels.front().window);
     }
     bool OwnsForeground() const {
         DWORD process=0;
         GetWindowThreadProcessId(GetForegroundWindow(),&process);
         return process==GetCurrentProcessId();
     }
+    bool TrayHasForeground() const {
+        wchar_t name[96]{};
+        GetClassNameW(GetForegroundWindow(),name,96);
+        return !wcscmp(name,L"Shell_TrayWnd") || !wcscmp(name,L"Shell_SecondaryTrayWnd") ||
+            !wcscmp(name,L"NotifyIconOverflowWindow") || !wcscmp(name,L"TopLevelWindowForOverflowXamlIsland") ||
+            !wcscmp(name,L"Xaml_WindowedPopupClass");
+    }
     void Reveal() {
+        ++revealGeneration;
         temporaryReveal=desktop && !editing;
         revealActivated=false;
         Show(true); RaiseFloating(); revealActivated=OwnsForeground(); Log("workspace_revealed");
+    }
+    void QueueReveal() {
+        // Leave the Shell callback before activating/reparenting windows. A tray
+        // selection always reveals; opening its overflow can already deactivate us.
+        if (!revealQueued) revealQueued=PostMessageW(controller,revealMessage,0,0)!=FALSE;
     }
     void ReturnToDesktop() {
         if (!temporaryReveal) return;
@@ -298,8 +320,8 @@ public:
         if (visible) AppendMenuW(menu,MF_STRING,101,L"隐藏卡片");
         AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
         AppendMenuW(menu,MF_STRING,107,L"退出 Evoly Aura");
-        POINT point{}; GetCursorPos(&point); SetForegroundWindow(controller);
         menuOpen=true;
+        POINT point{}; GetCursorPos(&point); SetForegroundWindow(controller);
         UINT command=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,controller,nullptr);
         menuOpen=false;
         DestroyMenu(menu);
@@ -319,6 +341,14 @@ public:
         catch (const std::exception& error) {
             self->Log(error.what()); self->failed=true; PostQuitMessage(1); return 0;
         }
+    }
+    static void CALLBACK ForegroundProc(HWINEVENTHOOK,DWORD,HWND,LONG,LONG,DWORD,DWORD) {
+        const HWND controller=FindWindowW(L"AuraWorkspaceController",nullptr);
+        auto* self=reinterpret_cast<DesktopApp*>(GetWindowLongPtrW(controller,GWLP_USERDATA));
+        // Out-of-context callbacks arrive on our message thread. Observe the next
+        // app activation even if the Shell temporarily took foreground first.
+        if (self && self->temporaryReveal && self->revealActivated)
+            PostMessageW(controller,returnToDesktopMessage,self->revealGeneration,0);
     }
     void Drag(HWND hwnd,POINT point) {
         auto* panel=Panel(hwnd);
@@ -355,7 +385,7 @@ public:
     LRESULT Message(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
         if (msg==WM_ACTIVATEAPP && wp && temporaryReveal && !changingLayer) revealActivated=true;
         if (msg==WM_ACTIVATEAPP && !wp && temporaryReveal && revealActivated && !changingLayer && !menuOpen)
-            PostMessageW(controller,returnToDesktopMessage,0,0);
+            PostMessageW(controller,returnToDesktopMessage,revealGeneration,0);
         if (msg==WM_KEYDOWN && wp==VK_ESCAPE) {
             if (temporaryReveal) ReturnToDesktop();
             else if (editing) SetEditing(false);
@@ -373,10 +403,19 @@ public:
                 Show(visible); Log("shell_recovered"); return 0;
             }
             switch (msg) {
-            case trayMessage:
-                if (lp==WM_LBUTTONUP) ToggleVisibility();
-                if (lp==WM_RBUTTONUP) Menu(hwnd);
+            case trayMessage: {
+                const UINT event=trayVersion4?LOWORD(lp):UINT(lp);
+                const UINT icon=trayVersion4?HIWORD(lp):UINT(wp);
+                if (icon!=1) return 0;
+                if (log && (event==NIN_SELECT || event==NIN_KEYSELECT || event==WM_CONTEXTMENU || event==WM_RBUTTONUP)) {
+                    log<<"tray_event "<<event<<'\n'; log.flush();
+                }
+                if (trayVersion4?(event==NIN_SELECT || event==NIN_KEYSELECT):event==WM_LBUTTONUP) QueueReveal();
+                if (trayVersion4?event==WM_CONTEXTMENU:event==WM_RBUTTONUP) Menu(hwnd);
                 return 0;
+            }
+            case revealMessage:
+                revealQueued=false; Reveal(); return 0;
             case controlMessage:
                 if (wp==100) Reveal();
                 else if (wp==101) Show(false);
@@ -390,7 +429,10 @@ public:
                 else if (wp>=120 && wp<120+panels.size()) TogglePin(panels[size_t(wp-120)]);
                 return 0;
             case returnToDesktopMessage:
-                if (!OwnsForeground()) ReturnToDesktop();
+                // A popup menu pumps this same queue. Do not reparent/hide its
+                // panels mid-selection, or an outer Show(true) can undo Hide.
+                if (!menuOpen && !changingLayer && !revealQueued && wp==revealGeneration &&
+                    !OwnsForeground() && !TrayHasForeground()) ReturnToDesktop();
                 return 0;
             case WM_HOTKEY:
                 if (wp==1) ToggleVisibility();
@@ -571,6 +613,9 @@ public:
         controller=CreateWindowExW(WS_EX_TOOLWINDOW,L"AuraWorkspaceController",L"Evoly Aura Controller",WS_POPUP,
             0,0,0,0,nullptr,nullptr,cls.hInstance,this);
         if (!controller) throw std::runtime_error("Workspace controller creation failed");
+        foregroundHook=SetWinEventHook(EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_FOREGROUND,nullptr,
+            ForegroundProc,0,0,WINEVENT_OUTOFCONTEXT|WINEVENT_SKIPOWNPROCESS);
+        if (!foregroundHook) Log("foreground_hook_unavailable");
         taskbarCreated=RegisterWindowMessageW(L"TaskbarCreated");
         AddTray();
         RegisterHotKey(controller,1,MOD_CONTROL|MOD_ALT|MOD_NOREPEAT,VK_F10);
