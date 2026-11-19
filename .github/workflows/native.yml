@@ -1,0 +1,39 @@
+name: Native Release
+on:
+  push:
+    paths:
+      - 'apps/**'
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - '.github/workflows/native.yml'
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'src/**'
+      - 'include/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'CMakeLists.txt'
+      - 'CMakePresets.json'
+      - '.github/workflows/native.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build Release and run core tests
+        shell: pwsh
+        run: ./tools/scripts/Build-Native.ps1 -BuildRoot "$env:RUNNER_TEMP/AuraBuild"
+      - name: Validate workspace
+        shell: pwsh
+        run: ./tools/scripts/Validate-Workspace.ps1

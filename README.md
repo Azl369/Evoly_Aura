@@ -2,7 +2,7 @@
 
 面向 Windows 的低内存玻璃桌面空间：桌面陈列、悬浮 HUD、自由编排。
 
-**当前阶段：工作区和计划已建立；尚未实现应用，也没有实测性能数据。**
+**当前阶段：P0 原生原型已实现，性能与兼容性验证进行中；不是完整桌面产品。**
 
 项目名称为 Evoly Aura，目录与远端仓库名称统一为 Evoly_Aura。
 远端仓库：[Azl369/Evoly_Aura](https://github.com/Azl369/Evoly_Aura)（公开，已完成首次同步）。
@@ -30,22 +30,23 @@ Flutter 编辑器仅保留为未来备选，不属于当前依赖。
 9. [测试与验收](docs/testing/VALIDATION.md)
 10. [Git / GitHub 工作流](docs/development/GIT_WORKFLOW.md)
 11. [交付与远端状态](docs/development/DELIVERY_STATUS.md)
+12. [原生构建、运行与测量](docs/development/NATIVE_BUILD.md)
 
 ## 工作区概览
 
 ~~~text
 Evoly_Aura/
-  apps/host/                原生常驻入口（预留）
+  apps/host/                原生 P0 入口
   apps/editor/              按需编辑器（预留）
-  src/                      核心、平台、渲染、组件、存储（预留）
-  include/aura/             稳定跨模块接口（预留）
+  src/                      图像算法、Windows 窗口、渲染；组件与存储预留
+  include/aura/             P0 模块接口
   assets/                   图标、主题；不存大体积演示媒体
   config/examples/          可公开的配置格式草案
   docs/                     产品、设计决策、计划和验收
-  tests/                    单元、集成、性能测试（预留）
+  tests/                    图像单元测试；集成与性能测试预留
   benchmarks/               测量协议与汇总，不存机器原始大文件
   tools/scripts/            工作区检查与后续开发工具
-  cmake/                    后续构建模块（预留）
+  cmake/                    后续构建辅助模块（预留）
   packaging/windows/        后续 Windows 发布配置（预留）
   .github/                  文档检查与协作模板
 ~~~
@@ -58,8 +59,8 @@ Windows PowerShell 5.1 或 PowerShell 7：
 powershell -NoProfile -File .\tools\scripts\Validate-Workspace.ps1
 ~~~
 
-这只检查文档、目录约定、相对链接和 JSON；当前没有 CMake 构建入口或应用可执行文件。
-运行时与工具链要求会在 P0 实验完成后固定。
+文档检查之外，可运行 tools/scripts/Build-Native.ps1 构建 Release 并执行 core 测试。
+tools/scripts/Test-Probe.ps1 执行六组 UI 冒烟测试；测量协议与限制见原生构建说明。
 
 ## 开发约定
 

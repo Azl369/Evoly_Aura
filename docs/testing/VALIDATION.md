@@ -3,7 +3,9 @@
 ## 当前阶段
 
 执行 tools/scripts/Validate-Workspace.ps1，检查必需文件、预留目录、文档相对链接和 JSON。
-GitHub Actions 使用同一入口。当前没有原生代码，不声称通过应用构建或性能测试。
+GitHub Actions 使用同一入口。
+原生代码通过 Build-Native.ps1 构建 Release 与 CTest；Test-Probe.ps1 检查六组窗口/材质正常绘制并退出。
+原生 CI 只构建与运行 core 测试，不在托管 runner 宣称桌面视觉或精确性能通过。
 
 ## 原型与后续自动化
 

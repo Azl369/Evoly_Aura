@@ -1,6 +1,8 @@
 # P0 原生性能原型实施计划
 
-状态：待开始。此次工作区初始化不包含应用实现。
+状态：进行中。原生 Release 原型与独立采样工具已实现；构建和六组材质运行冒烟通过。
+桌面挂载已适配经典 WorkerW 与 Windows 11 Progman 子 WorkerW；Explorer 重启尚未实际验收。
+使用与限制见 [原生构建说明](../development/NATIVE_BUILD.md)。
 
 ## 要回答的问题
 

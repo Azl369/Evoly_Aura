@@ -78,4 +78,4 @@ foreach ($file in $scannedFiles) {
     }
 }
 Write-Output "Workspace validation passed: $($requiredFiles.Count) required files, $($requiredDirectories.Count) directories, $jsonCount JSON files, $linkCount local links."
-Write-Output 'Native build and runtime benchmarks are not implemented at this planning stage.'
+Write-Output 'Documentation check only. Run Build-Native.ps1 and the separate runtime benchmark for native validation.'
