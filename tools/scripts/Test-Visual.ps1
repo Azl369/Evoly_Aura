@@ -1,12 +1,24 @@
 [CmdletBinding()]
 param(
     [string]$BuildRoot = 'D:\dev\build\Evoly_Aura',
-    [string]$OutputRoot = 'D:\dev\tmp\Evoly_Aura\visual'
+    [string]$OutputRoot = 'D:\dev\tmp\Evoly_Aura\visual',
+    [switch]$DiagnoseAcrylic
 )
 $ErrorActionPreference = 'Stop'
 if (Get-Process AuraProbe -ErrorAction SilentlyContinue) { throw 'Close the running probe before controlled visual tests.' }
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+if ($DiagnoseAcrylic -and -not ('AuraVisualNative' -as [type])) {
+    Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class AuraVisualNative {
+    [StructLayout(LayoutKind.Sequential)] public struct Margins { public int Left,Right,Top,Bottom; }
+    [DllImport("dwmapi.dll")] public static extern int DwmExtendFrameIntoClientArea(IntPtr hwnd, ref Margins margins);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+}
+'@
+}
 New-Item -ItemType Directory -Path $OutputRoot -Force | Out-Null
 $taskReference = New-Object System.Windows.Forms.Form
 $taskReference.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
@@ -41,6 +53,27 @@ try {
                 Start-Sleep -Milliseconds 100
             }
             & (Join-Path $PSScriptRoot 'Capture-Probe.ps1') -Output (Join-Path $OutputRoot "$taskMaterial-grid.png")
+            if ($DiagnoseAcrylic -and $taskMaterial -eq 'acrylic') {
+                $taskReference.BackgroundImage = $null
+                foreach ($taskColor in @('Black','White')) {
+                    $taskReference.BackColor = [System.Drawing.Color]::FromName($taskColor)
+                    $taskReference.Refresh()
+                    [System.Windows.Forms.Application]::DoEvents()
+                    Start-Sleep -Milliseconds 200
+                    & (Join-Path $PSScriptRoot 'Capture-Probe.ps1') -Output (Join-Path $OutputRoot "acrylic-$taskColor.png")
+                }
+                $taskHwnd = [AuraCaptureNative]::FindPanel()
+                $taskMargins = New-Object AuraVisualNative+Margins
+                $taskMargins.Left = -1; $taskMargins.Right = -1; $taskMargins.Top = -1; $taskMargins.Bottom = -1
+                $taskFrameResult = [AuraVisualNative]::DwmExtendFrameIntoClientArea($taskHwnd, [ref]$taskMargins)
+                Start-Sleep -Milliseconds 200
+                & (Join-Path $PSScriptRoot 'Capture-Probe.ps1') -Output (Join-Path $OutputRoot 'acrylic-extended.png')
+                $taskActivated = [AuraVisualNative]::SetForegroundWindow($taskHwnd)
+                Start-Sleep -Milliseconds 200
+                & (Join-Path $PSScriptRoot 'Capture-Probe.ps1') -Output (Join-Path $OutputRoot 'acrylic-active.png')
+                [ordered]@{ frameHresult=$taskFrameResult; activationAccepted=$taskActivated } | ConvertTo-Json |
+                    Set-Content (Join-Path $OutputRoot 'diagnostic.json') -Encoding utf8
+            }
             while (-not $taskProcess.HasExited) {
                 [System.Windows.Forms.Application]::DoEvents()
                 Start-Sleep -Milliseconds 100

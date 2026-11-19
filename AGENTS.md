@@ -2,7 +2,7 @@
 
 ## 当前范围
 
-本仓库处于 P0 原型与验证阶段。先阅读 README.md、docs/plans/ROADMAP.md、
+本仓库已调整为先做桌面视觉和交互框架，再做完整性能验收。先阅读 README.md、docs/plans/ROADMAP.md、
 docs/performance/PERFORMANCE_BUDGET.md 及最近的架构决策。
 
 ## 技术与目录
@@ -33,5 +33,6 @@ docs/performance/PERFORMANCE_BUDGET.md 及最近的架构决策。
 - 提交前运行 tools/scripts/Validate-Workspace.ps1。
 - 原生改动运行 tools/scripts/Build-Native.ps1，涉及窗口/材质时运行 Test-Probe.ps1。
 - 构建、UI 冒烟和性能协议是不同验收层级，不混淆或扩大结论。
-- 修改性能路径时，执行对应场景的 Release 基准并保存脱敏汇总。
+- 按用户 2026-11-19 的指示，视觉框架阶段优先完成效果和交互；保留资源约束，但暂缓追加基准与完整性能验收。
+- 当前修改执行 Release 构建、必要单元/交互测试和真实截图巡检；效果稳定后再统一执行性能协议。
 - GitHub 同步是显式提交与推送，不代表存在后台自动同步服务。
