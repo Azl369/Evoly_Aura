@@ -1,6 +1,6 @@
 # 工作区目录与职责
 
-状态：目录已预留，应用实现尚未开始。
+状态：已实现桌面框架、布局与命中算法、本地存储、Windows 交互和玻璃渲染；独立 P0 探针保留。
 
 ## 目录分工
 
@@ -28,7 +28,7 @@
 | docs/architecture/adr | 带理由和替代方案的架构决策 |
 | .github | CI、Issue 与 PR 模板 |
 
-空目录通过 .gitkeep 跟踪；实现落地时删除对应占位文件。
+空目录通过 .gitkeep 跟踪；已实现模块移除对应占位文件。
 
 ## 本地路径
 
@@ -43,6 +43,6 @@
 
 ## 构建入口计划
 
-CMake + MSVC + Windows SDK，C++20，先验证 Windows x64。
-P0 建立最小构建后再提交 CMakeLists.txt 与可共享 CMakePresets.json。
-当前不要把“目录存在”解释为“模块已实现”。
+CMake + MSVC + Windows SDK，C++20，当前验证 Windows x64。
+已建立 CMakeLists.txt、CMakePresets.json 与自动发现工具链的 Build-Native.ps1。
+详细步骤见 [原生构建说明](NATIVE_BUILD.md)。
