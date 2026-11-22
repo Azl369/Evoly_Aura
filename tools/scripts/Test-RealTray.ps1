@@ -1,6 +1,17 @@
 [CmdletBinding()]
-param([string]$BuildRoot='D:\dev\build\Evoly_Aura',[string]$OutputRoot='D:\dev\tmp\Evoly_Aura\real-tray')
+param([string]$BuildRoot='D:\dev\build\Evoly_Aura',[string]$OutputRoot='D:\dev\tmp\Evoly_Aura\real-tray',[ValidateRange(1,100)][int]$MenuCycles=50,[switch]$ReferenceHost)
 $ErrorActionPreference='Stop'
+if($ReferenceHost){
+ Add-Type -AssemblyName System.Windows.Forms
+ Add-Type 'using System;using System.Runtime.InteropServices;public static class AuraReferenceDpi{[DllImport("user32.dll")]public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr c);}'
+ $null=[AuraReferenceDpi]::SetThreadDpiAwarenessContext([IntPtr](-4))
+ $taskForm=New-Object System.Windows.Forms.Form
+ $taskForm.FormBorderStyle=[System.Windows.Forms.FormBorderStyle]::None
+ $taskForm.StartPosition=[System.Windows.Forms.FormStartPosition]::Manual
+ $taskForm.Bounds=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+ try{[System.Windows.Forms.Application]::Run($taskForm)}finally{$taskForm.Dispose()}
+ exit
+}
 if(Get-Process Aura -ErrorAction SilentlyContinue){throw 'Close Aura before the isolated real notification-area regression.'}
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
@@ -38,6 +49,7 @@ public static class AuraRealTray {
  public static void Restore(Point p){SetCursorPos(p.X,p.Y);}
  public static void Move(int x,int y){SetCursorPos(x,y);}
  public static uint OwnerAt(int x,int y){uint p;GetWindowThreadProcessId(GetAncestor(WindowFromPoint(new Point{X=x,Y=y}),2),out p);return p;}
+ public static string ClassAt(int x,int y){var s=new StringBuilder(128);GetClassName(GetAncestor(WindowFromPoint(new Point{X=x,Y=y}),2),s,128);return s.ToString();}
  public static void ShowDesktop(){keybd_event(0x5b,0,0,UIntPtr.Zero);keybd_event(0x44,0,0,UIntPtr.Zero);keybd_event(0x44,0,2,UIntPtr.Zero);keybd_event(0x5b,0,2,UIntPtr.Zero);}
  [DllImport("user32.dll")]static extern void keybd_event(byte key,byte scan,uint flags,UIntPtr extra);
  [DllImport("user32.dll")]static extern int GetMenuItemCount(IntPtr menu);
@@ -72,15 +84,20 @@ $null=[AuraRealTray]::GetCursorPos([ref]$taskCursor)
 $taskRun=Join-Path $OutputRoot ([DateTime]::UtcNow.ToString('yyyyMMddTHHmmssfffZ'))
 New-Item -ItemType Directory -Path $taskRun -Force | Out-Null
 $taskReference=$null
+$taskReferenceProcess=$null
 try{
- $taskReference=New-Object System.Windows.Forms.Form
- $taskReference.FormBorderStyle=[System.Windows.Forms.FormBorderStyle]::None
- $taskReference.StartPosition=[System.Windows.Forms.FormStartPosition]::Manual
- $taskReference.Bounds=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
- $taskReference.Show();$taskReference.Activate();[System.Windows.Forms.Application]::DoEvents()
- $taskArgs=@('--duration',180,'--data-dir',('"'+(Join-Path $taskRun 'state')+'"'),'--log',('"'+(Join-Path $taskRun 'events.log')+'"'))
+ # Give the reference its own message loop. UI Automation can pump this script's
+ # thread while querying Explorer; a form on that thread can steal tray focus.
+ $taskReference=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+ $taskReferenceProcess=Start-Process powershell.exe -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',('"'+$PSCommandPath+'"'),'-ReferenceHost') -WindowStyle Hidden -PassThru
+ for($taskTry=0;$taskTry -lt 100;$taskTry++){
+  if($taskReferenceProcess.HasExited){throw 'Reference host exited'}
+  if([AuraRealTray]::OwnerAt($taskReference.Left+8,$taskReference.Top+8) -eq $taskReferenceProcess.Id){break}
+  Start-Sleep -Milliseconds 100
+ }
+ $taskArgs=@('--duration',600,'--data-dir',('"'+(Join-Path $taskRun 'state')+'"'),'--log',('"'+(Join-Path $taskRun 'events.log')+'"'))
  $taskProcess=Start-Process (Join-Path $BuildRoot 'Release\Aura.exe') -ArgumentList $taskArgs -WindowStyle Hidden -PassThru
-}catch{if($taskReference){$taskReference.Dispose()};throw}
+}catch{if($taskReferenceProcess -and -not $taskReferenceProcess.HasExited){Stop-Process -Id $taskReferenceProcess.Id};throw}
 $taskLog=Join-Path $taskRun 'real-input.log'
 function Write-AuraTrayState([string]$Stage){
  $taskLine="$Stage : $([AuraRealTray]::State())"
@@ -94,7 +111,14 @@ function Find-AuraTrayIcon {
   $taskRoot=[System.Windows.Automation.AutomationElement]::FromHandle($taskHost)
   $taskItems=$taskRoot.FindAll([System.Windows.Automation.TreeScope]::Descendants,[System.Windows.Automation.Condition]::TrueCondition)
   foreach($taskItem in $taskItems){
-   if($taskItem.Current.Name.StartsWith('Evoly Aura') -and $taskItem.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and -not $taskItem.Current.IsOffscreen -and $taskItem.Current.BoundingRectangle.Width -gt 0){return $taskItem}
+   if($taskItem.Current.Name.StartsWith('Evoly Aura') -and $taskItem.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button -and -not $taskItem.Current.IsOffscreen -and $taskItem.Current.BoundingRectangle.Width -gt 0){
+    # Windows can expose the old overflow button while its surface is covered.
+    # Reject stale bounds and reopen the notification area instead of clicking.
+    $taskBounds=$taskItem.Current.BoundingRectangle
+    $taskOwner=[AuraRealTray]::OwnerAt([int]($taskBounds.Left+$taskBounds.Width/2),[int]($taskBounds.Top+$taskBounds.Height/2))
+    $taskClass=[AuraRealTray]::ClassAt([int]($taskBounds.Left+$taskBounds.Width/2),[int]($taskBounds.Top+$taskBounds.Height/2))
+    if((Get-Process -Id $taskOwner -ErrorAction SilentlyContinue).ProcessName -eq 'explorer' -and $taskClass -match '^(Shell_TrayWnd|TopLevelWindowForOverflowXamlIsland|NotifyIconOverflowWindow|Xaml_WindowedPopupClass)$'){return $taskItem}
+   }
   }
  }
  return $null
@@ -103,18 +127,11 @@ function Click-AuraElement($Element,[bool]$Right=$false){
  $taskBounds=$Element.Current.BoundingRectangle
  $taskPoint=New-Object System.Windows.Point(($taskBounds.Left+$taskBounds.Width/2),($taskBounds.Top+$taskBounds.Height/2))
  [AuraRealTray]::Move([int]$taskPoint.X,[int]$taskPoint.Y)
- Start-Sleep -Milliseconds 250
- $taskHit=[System.Windows.Automation.AutomationElement]::FromPoint($taskPoint)
- $taskHitClass=$taskHit.Current.ClassName
- $taskMatched=$false
- for($taskAncestor=0;$taskAncestor -lt 12 -and $null -ne $taskHit;$taskAncestor++){
-  if($taskHit.Current.Name -eq $Element.Current.Name){$taskMatched=$true;break}
-  $taskHit=[System.Windows.Automation.TreeWalker]::RawViewWalker.GetParent($taskHit)
- }
  $taskOwner=[AuraRealTray]::OwnerAt([int]$taskPoint.X,[int]$taskPoint.Y)
  $taskOwnerName=(Get-Process -Id $taskOwner).ProcessName
- if(-not $taskMatched -and ($taskOwnerName -ne 'explorer' -or $taskHitClass -notmatch '^(Shell_TrayWnd|TopLevelWindowForOverflowXamlIsland|NotifyIconOverflowWindow|Xaml_WindowedPopupClass)$')){
-  throw "Tray target is not hittable at $taskPoint; hit class=$taskHitClass. No click sent."
+ $taskHitClass=[AuraRealTray]::ClassAt([int]$taskPoint.X,[int]$taskPoint.Y)
+ if($taskOwnerName -ne 'explorer' -or $taskHitClass -notmatch '^(Shell_TrayWnd|Shell_SecondaryTrayWnd|TopLevelWindowForOverflowXamlIsland|NotifyIconOverflowWindow|Xaml_WindowedPopupClass)$'){
+  throw "Tray target '$($Element.Current.Name)' is not hittable at $taskPoint; hit class=$taskHitClass. No click sent."
  }
  [AuraRealTray]::Click([int]$taskPoint.X,[int]$taskPoint.Y,$Right)
  Start-Sleep -Milliseconds 180
@@ -151,6 +168,14 @@ try {
  }
  if(-not (Test-Path $taskReady) -or -not (Select-String -LiteralPath $taskReady -Pattern '^workspace_ready$' -Quiet)){throw 'Aura startup timed out'}
  Write-AuraTrayState 'initial'
+ for($taskMenuCycle=1;$taskMenuCycle -le $MenuCycles;$taskMenuCycle++){
+  Select-AuraTrayMenu 100
+  Write-AuraTrayState "actual-menu-reveal-$taskMenuCycle"
+  if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=7 topmost=0 hittable=7 '){throw "Actual Reveal menu failed after $taskMenuCycle cycles"}
+  Select-AuraTrayMenu 101
+  Write-AuraTrayState "actual-menu-hide-$taskMenuCycle"
+  if([AuraRealTray]::State() -notmatch ' visible=0 '){throw "Actual Hide menu failed after $taskMenuCycle cycles"}
+ }
  foreach($HideMethod in @('menu','reference','tray','tray-reference','desktop')){
  for($taskCycle=1;$taskCycle -le 3;$taskCycle++){
   $taskIcon=Open-AuraTrayIcon
@@ -167,22 +192,25 @@ try {
   else{
    if($HideMethod -eq 'tray-reference'){$null=Open-AuraTrayIcon}
    $taskX=$taskReference.Left+8;$taskY=$taskReference.Top+8
-   if([AuraRealTray]::OwnerAt($taskX,$taskY) -ne $PID){throw 'Reference click target is covered; no click sent.'}
+   if([AuraRealTray]::OwnerAt($taskX,$taskY) -ne $taskReferenceProcess.Id){throw 'Reference click target is covered; no click sent.'}
    [AuraRealTray]::Click($taskX,$taskY,$false)
    [System.Windows.Forms.Application]::DoEvents();Start-Sleep -Milliseconds 500
   }
   Write-AuraTrayState "$HideMethod-hide-$taskCycle"
   if($HideMethod -eq 'menu' -and [AuraRealTray]::State() -notmatch ' visible=0 '){throw 'Actual Hide menu did not hide cards'}
-  if($HideMethod -match 'reference' -and [AuraRealTray]::State() -notmatch ' floating=0 '){throw 'Activating another application did not return cards to desktop'}
+  if($HideMethod -match 'reference' -and [AuraRealTray]::State() -notmatch ' floating=7 '){throw 'Foreground activation unexpectedly reparented the revealed cards'}
   if($HideMethod -eq 'tray' -and [AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=7 topmost=0 hittable=7 '){throw 'Repeated tray selection did not keep all cards revealed'}
  }
  }
  $null=[AuraRealTray]::Command(107)
  if(-not $taskProcess.WaitForExit(10000) -or $taskProcess.ExitCode -ne 0){throw 'Aura did not exit cleanly'}
- Write-Output 'PASS: actual Hide menu, other app activation, repeated tray selection, Win+D and overflow-to-app activation; all seven cards hittable after every reveal.'
+ Write-Output "PASS: $MenuCycles actual Reveal/Hide menu cycles plus tray selection, other app activation, Win+D and overflow-to-app activation; all seven cards hittable after every reveal."
 } finally {
  if($taskProcess -and -not $taskProcess.HasExited){$null=[AuraRealTray]::Command(107);if(-not $taskProcess.WaitForExit(5000)){Stop-Process -Id $taskProcess.Id}}
- if($taskReference){$taskReference.Close();$taskReference.Dispose()}
+ if($taskReferenceProcess -and -not $taskReferenceProcess.HasExited){
+  $null=$taskReferenceProcess.CloseMainWindow()
+  if(-not $taskReferenceProcess.WaitForExit(5000)){Stop-Process -Id $taskReferenceProcess.Id}
+ }
  [AuraRealTray]::Restore($taskCursor)
 }
 Write-Output "Local real-input evidence: $taskRun"

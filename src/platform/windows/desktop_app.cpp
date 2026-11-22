@@ -12,7 +12,7 @@
 namespace aura {
 namespace {
 constexpr UINT trayMessage=WM_APP+1,controlMessage=WM_APP+2;
-constexpr UINT returnToDesktopMessage=WM_APP+3,revealMessage=WM_APP+4;
+constexpr UINT revealMessage=WM_APP+4;
 constexpr UINT minuteTimer=1,focusTimer=2,durationTimer=3;
 struct DesktopPanel {
     HWND window{};
@@ -56,9 +56,8 @@ public:
     std::vector<DesktopPanel> panels;
     HWND controller{},noteEditor{},noteInput{},desktopHost{};
     HANDLE instance{};
-    HWINEVENTHOOK foregroundHook{};
     bool editing=false,desktop=true,visible=true,focusRunning=false,failed=false,warned=false;
-    bool temporaryReveal=false,changingLayer=false,menuOpen=false,revealActivated=false;
+    bool temporaryReveal=false,changingLayer=false;
     bool trayVersion4=false,revealQueued=false;
     WPARAM revealGeneration=0;
     int theme=0,checkedTasks=0,remaining=1500;
@@ -73,7 +72,6 @@ public:
     RECT dragBounds{};
     std::chrono::steady_clock::time_point focusEnd;
     ~DesktopApp() {
-        if (foregroundHook) UnhookWinEvent(foregroundHook);
         if (noteEditor && IsWindow(noteEditor)) DestroyWindow(noteEditor);
         NOTIFYICONDATAW data{sizeof(data)}; data.hWnd=controller; data.uID=1;
         if (controller) Shell_NotifyIconW(NIM_DELETE,&data);
@@ -97,7 +95,7 @@ public:
     void Save() {
         for (auto& panel:panels) {
             RECT r{};
-            if (!IsWindow(panel.window) || !GetWindowRect(panel.window,&r)) continue;
+            if (!IsWindow(panel.window) || IsIconic(panel.window) || !GetWindowRect(panel.window,&r)) continue;
             auto& b=panel.placement.bounds;
             b={float(r.left-work.left)/Scale(),float(r.top-work.top)/Scale(),
                 float(r.right-r.left)/Scale(),float(r.bottom-r.top)/Scale()};
@@ -146,6 +144,17 @@ public:
             if (!IsWindow(panel.window)) continue;
             auto layer=ResolveWindowLayer(DesktopRequested(),desktopHost!=nullptr,editing,panel.placement.pinned);
             bool child=layer==WindowLayer::desktop;
+            if (IsIconic(panel.window)) ShowWindow(panel.window,SW_RESTORE);
+            // Repeated reveal/hide must not detach and reattach an unchanged
+            // window. In particular, revealed cards stay outside wallpaper hosts.
+            const HWND wantedParent=child?desktopHost:nullptr;
+            if (GetParent(panel.window)==wantedParent) {
+                panel.attached=child;
+                SetWindowPos(panel.window,layer==WindowLayer::topmost?HWND_TOPMOST:HWND_NOTOPMOST,
+                    0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+                if (child) SetWindowPos(panel.window,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE);
+                continue;
+            }
             RECT r{}; GetWindowRect(panel.window,&r);
             ShowWindow(panel.window,SW_HIDE);
             SetParent(panel.window,nullptr);
@@ -181,9 +190,9 @@ public:
     }
     void Show(bool show) {
         visible=show;
-        if (!show) { ++revealGeneration; temporaryReveal=false; revealActivated=false; revealQueued=false; }
+        if (!show) { ++revealGeneration; temporaryReveal=false; revealQueued=false; }
         if (show) EnsurePanels();
-        if (show && !panels.empty()) renderer->LoadBackground(panels.front().window);
+        if (show && DesktopRequested() && !panels.empty()) renderer->LoadBackground(panels.front().window);
         if (show) SetMode();
         for (auto& panel:panels) ShowWindow(panel.window,show?SW_SHOWNOACTIVATE:SW_HIDE);
         if (show) {
@@ -200,39 +209,23 @@ public:
         for (auto& p:panels) if (IsWindow(p.window) && !GetParent(p.window))
             SetWindowPos(p.window,HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOACTIVATE|SWP_SHOWWINDOW);
     }
-    bool OwnsForeground() const {
-        DWORD process=0;
-        GetWindowThreadProcessId(GetForegroundWindow(),&process);
-        return process==GetCurrentProcessId();
-    }
-    bool TrayHasForeground() const {
-        wchar_t name[96]{};
-        GetClassNameW(GetForegroundWindow(),name,96);
-        return !wcscmp(name,L"Shell_TrayWnd") || !wcscmp(name,L"Shell_SecondaryTrayWnd") ||
-            !wcscmp(name,L"NotifyIconOverflowWindow") || !wcscmp(name,L"TopLevelWindowForOverflowXamlIsland") ||
-            !wcscmp(name,L"Xaml_WindowedPopupClass");
-    }
     void Reveal() {
         ++revealGeneration;
+        revealQueued=false;
         temporaryReveal=desktop && !editing;
-        revealActivated=false;
-        Show(true); RaiseFloating(); revealActivated=OwnsForeground(); Log("workspace_revealed");
+        Show(true); RaiseFloating(); Log("workspace_revealed");
     }
     void QueueReveal() {
         // Leave the Shell callback before activating/reparenting windows. A tray
         // selection always reveals; opening its overflow can already deactivate us.
         if (!revealQueued) revealQueued=PostMessageW(controller,revealMessage,++revealGeneration,0)!=FALSE;
     }
-    void ReturnToDesktop() {
-        if (!temporaryReveal || !visible) return;
-        temporaryReveal=false; Show(true); Log("reveal_returned_to_desktop");
-    }
     void ToggleVisibility() {
         if (visible && (temporaryReveal || !desktop || editing)) Show(false);
         else Reveal();
     }
     void ChangeMode(bool wantDesktop) {
-        ++revealGeneration; revealQueued=false; revealActivated=false;
+        ++revealGeneration; revealQueued=false;
         desktop=wantDesktop; editing=false; temporaryReveal=false;
         Show(true);
         if (!wantDesktop) RaiseFloating();
@@ -318,14 +311,13 @@ public:
         AppendMenuW(menu,MF_STRING|(visible?0:MF_GRAYED),101,L"隐藏卡片");
         AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
         AppendMenuW(menu,MF_STRING,107,L"退出 Evoly Aura");
-        menuOpen=true;
         POINT point{}; GetCursorPos(&point); SetForegroundWindow(controller);
         UINT command=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,controller,nullptr);
-        menuOpen=false;
         DestroyMenu(menu);
         if (command==108) {
             if (auto* panel=Panel(owner)) TogglePin(*panel);
-        } else if (command) SendMessageW(controller,controlMessage,command,0);
+        } else if (command==100) QueueReveal();
+        else if (command) PostMessageW(controller,controlMessage,command,0);
         PostMessageW(controller,WM_NULL,0,0);
     }
     static LRESULT CALLBACK WindowProc(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
@@ -339,14 +331,6 @@ public:
         catch (const std::exception& error) {
             self->Log(error.what()); self->failed=true; PostQuitMessage(1); return 0;
         }
-    }
-    static void CALLBACK ForegroundProc(HWINEVENTHOOK,DWORD,HWND,LONG,LONG,DWORD,DWORD) {
-        const HWND controller=FindWindowW(L"AuraWorkspaceController",nullptr);
-        auto* self=reinterpret_cast<DesktopApp*>(GetWindowLongPtrW(controller,GWLP_USERDATA));
-        // Out-of-context callbacks arrive on our message thread. Observe the next
-        // app activation even if the Shell temporarily took foreground first.
-        if (self && self->temporaryReveal && self->revealActivated)
-            PostMessageW(controller,returnToDesktopMessage,self->revealGeneration,0);
     }
     void Drag(HWND hwnd,POINT point) {
         auto* panel=Panel(hwnd);
@@ -381,11 +365,8 @@ public:
         InvalidateRect(hwnd,nullptr,FALSE); UpdateWindow(hwnd);
     }
     LRESULT Message(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
-        if (msg==WM_ACTIVATEAPP && wp && temporaryReveal && !changingLayer) revealActivated=true;
-        if (msg==WM_ACTIVATEAPP && !wp && temporaryReveal && revealActivated && !changingLayer && !menuOpen)
-            PostMessageW(controller,returnToDesktopMessage,revealGeneration,0);
         if (msg==WM_KEYDOWN && wp==VK_ESCAPE) {
-            if (temporaryReveal) ReturnToDesktop();
+            if (temporaryReveal) Show(false);
             else if (editing) SetEditing(false);
             return 0;
         }
@@ -426,12 +407,6 @@ public:
                 else if (wp==109) Action(WidgetAction::focus);
                 else if (wp==110) EditNote();
                 else if (wp>=120 && wp<120+panels.size()) TogglePin(panels[size_t(wp-120)]);
-                return 0;
-            case returnToDesktopMessage:
-                // A popup menu pumps this same queue. Do not reparent/hide its
-                // panels mid-selection, or an outer Show(true) can undo Hide.
-                if (!menuOpen && !changingLayer && !revealQueued && wp==revealGeneration &&
-                    !OwnsForeground() && !TrayHasForeground()) ReturnToDesktop();
                 return 0;
             case WM_HOTKEY:
                 if (wp==1) ToggleVisibility();
@@ -611,9 +586,6 @@ public:
         controller=CreateWindowExW(WS_EX_TOOLWINDOW,L"AuraWorkspaceController",L"Evoly Aura Controller",WS_POPUP,
             0,0,0,0,nullptr,nullptr,cls.hInstance,this);
         if (!controller) throw std::runtime_error("Workspace controller creation failed");
-        foregroundHook=SetWinEventHook(EVENT_SYSTEM_FOREGROUND,EVENT_SYSTEM_FOREGROUND,nullptr,
-            ForegroundProc,0,0,WINEVENT_OUTOFCONTEXT|WINEVENT_SKIPOWNPROCESS);
-        if (!foregroundHook) Log("foreground_hook_unavailable");
         taskbarCreated=RegisterWindowMessageW(L"TaskbarCreated");
         AddTray();
         RegisterHotKey(controller,1,MOD_CONTROL|MOD_ALT|MOD_NOREPEAT,VK_F10);

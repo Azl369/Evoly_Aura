@@ -121,7 +121,7 @@ void Renderer::DrawWidget(ID2D1RenderTarget* target, HWND window, const WidgetVi
         target->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(44,38),11,11),brush.Get(),1.5f);
         line(36,45,52,31,accent,1,1.5f);
         text(L"Evoly Aura",3,D2D1::RectF(80,16,280,42));
-        text(view.editing?L"拖动标题区，右下角调整大小":view.temporaryReveal?L"临时唤起 · Esc 回到桌面":L"我的桌面 / 浮光",0,D2D1::RectF(80,46,450,64),muted);
+        text(view.editing?L"拖动标题区，右下角调整大小":view.temporaryReveal?L"卡片已唤起 · Esc 隐藏":L"我的桌面 / 浮光",0,D2D1::RectF(80,46,450,64),muted);
         button(WidgetAction::editLayout,view.editing?L"完成编辑":L"编辑布局",view.editing);
         button(WidgetAction::resetLayout,L"重置布局");
         break;

@@ -144,6 +144,11 @@ try {
     $taskClock = $taskPanels[1]
     $taskX = $taskClock.Right - 35
     $taskY = [int](($taskClock.Top + $taskClock.Bottom)/2)
+    $taskReference.BringToFront(); $taskReference.Activate()
+    $null=[AuraLayerRegression]::SetForegroundWindow($taskReference.Handle)
+    [System.Windows.Forms.Application]::DoEvents()
+    Start-Sleep -Milliseconds 150
+    if ([AuraLayerRegression]::OwnerAt($taskX,$taskY) -ne $PID) { throw 'Controlled alpha background is not in front of the desktop.' }
     $null = [AuraLayerRegression]::AllowSetForegroundWindow([uint32]$taskProcess.Id)
     Invoke-AuraLayerCommand 103
     Assert-AuraFloating
@@ -177,9 +182,10 @@ try {
     Activate-AuraReference
     Start-Sleep -Milliseconds 100
     $taskReturned = @([AuraLayerRegression]::Panels())
-    if (@($taskReturned | Where-Object { $_.Parent -eq [IntPtr]::Zero -or $_.Topmost }).Count) {
-        throw 'Temporary reveal did not return to desktop after another app activation.'
+    if (@($taskReturned | Where-Object { $_.Parent -ne [IntPtr]::Zero -or $_.Topmost -or -not $_.Visible }).Count) {
+        throw 'Another app activation unexpectedly hid or reparented revealed cards.'
     }
+    if ([AuraLayerRegression]::OwnerAt($taskX,$taskY) -eq $taskProcess.Id) { throw 'Revealed cards block the activated application.' }
     Invoke-AuraLayerCommand 121
     $taskPinned = @([AuraLayerRegression]::Panels() | Where-Object Topmost)
     if ($taskPinned.Count -ne 1 -or $taskPinned[0].Hwnd -ne $taskClock.Hwnd) { throw 'Explicit pin did not limit topmost to one card.' }
@@ -199,8 +205,8 @@ try {
     Assert-AuraFloating
     if (-not [AuraLayerRegression]::Escape()) { throw 'Escape was not delivered.' }
     Start-Sleep -Milliseconds 150
-    if (@([AuraLayerRegression]::Panels() | Where-Object { $_.Parent -eq [IntPtr]::Zero -or $_.Topmost }).Count) {
-        throw 'Repeated reveal did not return to desktop on Escape.'
+    if (@([AuraLayerRegression]::Panels() | Where-Object Visible).Count) {
+        throw 'Escape did not hide revealed cards.'
     }
     Invoke-AuraLayerCommand 104
     if (@([AuraLayerRegression]::Panels() | Where-Object Topmost).Count -ne 7) { throw 'Layout editor was not temporarily raised.' }
@@ -213,14 +219,14 @@ try {
     [ordered]@{
         normalFloatingTopmost = 0
         hiddenDesktopFloatingCycles = 8
-        trayRevealAndReturn = 'passed'
+        trayRevealAndHide = 'passed'
         explicitPinAndUnpin = 'passed'
         escapeAndEditFinish = 'passed'
         liveAlphaRedPixel = $taskRed
         liveAlphaBluePixel = $taskBlue
         channelDifference = $taskDifference
     } | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $taskRun 'result.json') -Encoding utf8
-    Write-Output 'PASS: default desktop, non-topmost floating, real alpha, foreground app coverage, repeated hidden mode switches, tray reveal/return and single-card pin.'
+    Write-Output 'PASS: default desktop, non-topmost floating, real alpha, foreground app coverage without reparenting, repeated hidden mode switches, tray reveal/hide and single-card pin.'
     Write-Output "Local regression evidence: $taskRun"
 } finally {
     if (-not $taskProcess.HasExited) { $null=[AuraLayerRegression]::Command(107); if (-not $taskProcess.WaitForExit(5000)) { Stop-Process -Id $taskProcess.Id } }
