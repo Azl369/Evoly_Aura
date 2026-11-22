@@ -2,6 +2,7 @@
 #include "aura/render.h"
 #include "aura/workspace.h"
 #include "aura/system_sampler.h"
+#include "aura/launcher_icons.h"
 #include <windowsx.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -9,11 +10,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cwctype>
 
 namespace aura {
 namespace {
 constexpr UINT trayMessage=WM_APP+1,controlMessage=WM_APP+2;
-constexpr UINT revealMessage=WM_APP+4,systemSampleMessage=WM_APP+5;
+constexpr UINT revealMessage=WM_APP+4,systemSampleMessage=WM_APP+5,launcherIconsMessage=WM_APP+6;
 constexpr UINT minuteTimer=1,focusTimer=2,durationTimer=3;
 struct DesktopPanel {
     HWND window{};
@@ -54,6 +56,13 @@ public:
     DesktopOptions options;
     std::unique_ptr<Renderer> renderer;
     std::unique_ptr<WorkspaceStore> store;
+    std::unique_ptr<LauncherStore> launcherStore;
+    LauncherIcons launcherIcons;
+    std::vector<LauncherEntry> launchers;
+    size_t launcherPage=0;
+    bool launcherReadOnly=false;
+    HWND renameWindow{},renameInput{};
+    std::wstring renameId;
     SystemSampler systemSampler;
     std::vector<DesktopPanel> panels;
     HWND controller{},noteEditor{},noteInput{},desktopHost{};
@@ -75,6 +84,8 @@ public:
     RECT dragBounds{};
     std::chrono::steady_clock::time_point focusEnd;
     ~DesktopApp() {
+        launcherIcons.Stop();
+        if(renameWindow && IsWindow(renameWindow))DestroyWindow(renameWindow);
         systemSampler.Stop();
         if (noteEditor && IsWindow(noteEditor)) DestroyWindow(noteEditor);
         NOTIFYICONDATAW data{sizeof(data)}; data.hWnd=controller; data.uID=1;
@@ -117,9 +128,20 @@ public:
         WidgetView view;
         view.kind=panel.placement.kind; view.editing=editing; view.desktop=OnDesktop();
         view.sampleWallpaper=panel.attached; view.temporaryReveal=temporaryReveal;
-        view.theme=theme; view.opacity=opacity; view.note=note; view.hovered=panel.hovered;
+        view.theme=theme; view.opacity=opacity; view.hovered=panel.hovered;
+        if(panel.placement.kind==WidgetKind::notes)view.note=note;
         view.focusRunning=focusRunning; view.focusSeconds=remaining; view.checkedTasks=checkedTasks;
         if (panel.placement.kind==WidgetKind::systemMonitor) view.system=systemSampler.Read();
+        if(panel.placement.kind==WidgetKind::launcher) {
+            view.launcherPage=launcherPage;view.launcherPages=LauncherPages(launchers.size());
+            const size_t start=launcherPage*launcherPageSize;
+            for(size_t i=0;i<launcherPageSize && start+i<launchers.size();++i) {
+                const auto& entry=launchers[start+i];auto& tile=view.launchers[i];
+                tile.name=entry.name;tile.builtin=entry.builtin;
+                if(entry.builtin<0)tile.image=launcherIcons.Get(entry.target,std::clamp(unsigned(std::lround(32*GetDpiForWindow(panel.window)/96.f)),16u,128u));
+                ++view.launcherCount;
+            }
+        }
         return view;
     }
     void Paint(DesktopPanel& panel) {
@@ -194,6 +216,7 @@ public:
         renderer->ReleaseAll(); CreatePanels(placements); Log("panels_recreated");
     }
     void Show(bool show) {
+        if(show)launcherIcons.Resume();else launcherIcons.Pause();
         if (!show) { systemSampler.Stop(); systemSampleLogged=false; }
         visible=show;
         if (!show) { ++revealGeneration; temporaryReveal=false; revealQueued=false; }
@@ -274,8 +297,103 @@ public:
             CoTaskMemFree(value);
         }
     }
+    void InvalidateLauncher() {
+        launcherPage=std::min(launcherPage,LauncherPages(launchers.size())-1);
+        for(auto& panel:panels)if(panel.placement.kind==WidgetKind::launcher)InvalidateRect(panel.window,nullptr,FALSE);
+    }
+    bool CommitLaunchers(std::vector<LauncherEntry> next) {
+        if(launcherReadOnly) {MessageBoxW(controller,L"入口配置无法读取，原文件已保留。请先修复或备份该文件。",L"Evoly Aura",MB_OK|MB_ICONWARNING);return false;}
+        try{launcherStore->Save(next);launchers=std::move(next);InvalidateLauncher();Log("launchers_saved");return true;}
+        catch(const std::exception&){MessageBoxW(controller,L"快捷方式未能保存，原有入口保持不变。请检查数据目录。",L"Evoly Aura",MB_OK|MB_ICONWARNING);return false;}
+    }
+    void AddLauncherPaths(const std::vector<std::wstring>& paths) {
+        auto next=launchers;size_t added=0;
+        for(const auto& path:paths) {
+            if(next.size()>=launcherEntryLimit)break;
+            auto extension=std::filesystem::path(path).extension().wstring();
+            std::transform(extension.begin(),extension.end(),extension.begin(),[](wchar_t c){return wchar_t(std::towlower(c));});
+            if(extension!=L".exe" && extension!=L".lnk" && extension!=L".url")continue;
+            if(path.size()>4096 || !std::filesystem::path(path).is_absolute())continue;
+            if(std::any_of(next.begin(),next.end(),[&](const auto& entry){return !entry.target.empty() && CompareStringOrdinal(entry.target.c_str(),-1,path.c_str(),-1,TRUE)==CSTR_EQUAL;}))continue;
+            GUID id{};if(FAILED(CoCreateGuid(&id)))continue;
+            wchar_t value[40]{};StringFromGUID2(id,value,40);
+            auto name=std::filesystem::path(path).stem().wstring();if(name.size()>128)name.resize(128);
+            LauncherEntry entry{value,name,path,-1};
+            if(ValidLauncher(entry)){next.push_back(std::move(entry));++added;}
+        }
+        if(added) {
+            const size_t old=launchers.size();
+            if(CommitLaunchers(std::move(next))){launcherPage=old/launcherPageSize;InvalidateLauncher();}
+        } else MessageBoxW(controller,L"请选择应用 (.exe) 或快捷方式 (.lnk/.url)。重复入口不会添加；最多支持 256 个入口。",L"Evoly Aura",MB_OK|MB_ICONINFORMATION);
+    }
+    void PickLaunchers() {
+        ComPtr<IFileOpenDialog> dialog;
+        if(FAILED(CoCreateInstance(CLSID_FileOpenDialog,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&dialog))))return;
+        DWORD flags=0;dialog->GetOptions(&flags);
+        dialog->SetOptions(flags|FOS_ALLOWMULTISELECT|FOS_FILEMUSTEXIST|FOS_FORCEFILESYSTEM|FOS_DONTADDTORECENT|FOS_NODEREFERENCELINKS);
+        const COMDLG_FILTERSPEC types[]{{L"应用和快捷方式",L"*.exe;*.lnk;*.url"}};
+        dialog->SetFileTypes(1,types);dialog->SetTitle(L"添加应用快捷方式");
+        if(FAILED(dialog->Show(controller)))return;
+        ComPtr<IShellItemArray> results;if(FAILED(dialog->GetResults(&results)))return;
+        DWORD count=0;results->GetCount(&count);std::vector<std::wstring> paths;
+        for(DWORD i=0;i<count && i<launcherEntryLimit;++i) {
+            ComPtr<IShellItem> item;PWSTR path=nullptr;
+            if(SUCCEEDED(results->GetItemAt(i,&item)) && SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH,&path))){paths.emplace_back(path);CoTaskMemFree(path);}
+        }
+        if(!paths.empty())AddLauncherPaths(paths);
+    }
+    void LaunchEntry(size_t index) {
+        if(index>=launchers.size())return;
+        const auto entry=launchers[index];
+        if(entry.builtin>=0){Action(WidgetAction(int(WidgetAction::launchExplorer)+entry.builtin));return;}
+        auto extension=std::filesystem::path(entry.target).extension().wstring();
+        std::transform(extension.begin(),extension.end(),extension.begin(),[](wchar_t c){return wchar_t(std::towlower(c));});
+        const auto directory=extension==L".exe"?std::filesystem::path(entry.target).parent_path().wstring():std::wstring{};
+        if(INT_PTR(ShellExecuteW(controller,L"open",entry.target.c_str(),nullptr,directory.empty()?nullptr:directory.c_str(),SW_SHOWNORMAL))<=32)
+            MessageBoxW(controller,L"无法打开此入口。请检查应用或原快捷方式是否仍然存在。",L"Evoly Aura",MB_OK|MB_ICONWARNING);
+    }
+    static LRESULT CALLBACK RenameProc(HWND window,UINT message,WPARAM wp,LPARAM lp) {
+        auto* self=reinterpret_cast<DesktopApp*>(GetWindowLongPtrW(window,GWLP_USERDATA));
+        if(message==WM_NCCREATE){self=static_cast<DesktopApp*>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams);SetWindowLongPtrW(window,GWLP_USERDATA,reinterpret_cast<LONG_PTR>(self));}
+        if(!self)return DefWindowProcW(window,message,wp,lp);
+        if(message==WM_COMMAND) {
+            if(LOWORD(wp)==1) {
+                int size=GetWindowTextLengthW(self->renameInput);std::wstring value(size_t(size)+1,L'\0');
+                GetWindowTextW(self->renameInput,value.data(),size+1);value.resize(size_t(size));
+                auto next=self->launchers;
+                auto found=std::find_if(next.begin(),next.end(),[&](const auto& entry){return entry.id==self->renameId;});
+                if(found==next.end()){DestroyWindow(window);return 0;}
+                found->name=value;
+                if(!ValidLauncher(*found)){MessageBoxW(window,L"名称不能为空，最多 128 个字符。",L"Evoly Aura",MB_OK|MB_ICONINFORMATION);return 0;}
+                if(self->CommitLaunchers(std::move(next)))DestroyWindow(window);
+            } else if(LOWORD(wp)==2)DestroyWindow(window);
+            return 0;
+        }
+        if(message==WM_DESTROY){self->renameWindow=nullptr;self->renameInput=nullptr;self->renameId.clear();return 0;}
+        return DefWindowProcW(window,message,wp,lp);
+    }
+    void RenameLauncher(size_t index) {
+        if(index>=launchers.size())return;
+        if(renameWindow){SetForegroundWindow(renameWindow);return;}
+        renameId=launchers[index].id;
+        renameWindow=CreateWindowExW(WS_EX_TOOLWINDOW,L"AuraShortcutRename",L"重命名入口",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU,
+            work.left+400,work.top+250,390,155,controller,nullptr,GetModuleHandleW(nullptr),this);
+        if(!renameWindow)return;
+        renameInput=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",launchers[index].name.c_str(),WS_CHILD|WS_VISIBLE|WS_TABSTOP|ES_AUTOHSCROLL,
+            16,18,340,27,renameWindow,reinterpret_cast<HMENU>(3),GetModuleHandleW(nullptr),nullptr);
+        SendMessageW(renameInput,EM_LIMITTEXT,128,0);SendMessageW(renameInput,EM_SETSEL,0,-1);
+        auto font=GetStockObject(DEFAULT_GUI_FONT);SendMessageW(renameInput,WM_SETFONT,WPARAM(font),TRUE);
+        for(int i=1;i<=2;++i){auto button=CreateWindowW(L"BUTTON",i==1?L"保存":L"取消",WS_CHILD|WS_VISIBLE|WS_TABSTOP|(i==1?BS_DEFPUSHBUTTON:0),
+            178+(i-1)*94,66,84,30,renameWindow,reinterpret_cast<HMENU>(INT_PTR(i)),GetModuleHandleW(nullptr),nullptr);SendMessageW(button,WM_SETFONT,WPARAM(font),TRUE);}
+        ShowWindow(renameWindow,SW_SHOW);SetWindowPos(renameWindow,editing?HWND_TOPMOST:HWND_TOP,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_SHOWWINDOW);
+        SetForegroundWindow(renameWindow);SetFocus(renameInput);
+    }
     void Action(WidgetAction action) {
+        if(action>=WidgetAction::launcher0 && action<=WidgetAction::launcher5){LaunchEntry(launcherPage*launcherPageSize+size_t(int(action)-int(WidgetAction::launcher0)));return;}
         switch (action) {
+        case WidgetAction::launcherAdd: PickLaunchers();break;
+        case WidgetAction::launcherPrevious: if(launcherPage)--launcherPage;InvalidateLauncher();break;
+        case WidgetAction::launcherNext: if(launcherPage+1<LauncherPages(launchers.size()))++launcherPage;InvalidateLauncher();break;
         case WidgetAction::editLayout: SetEditing(!editing); break;
         case WidgetAction::resetLayout: Reset(); break;
         case WidgetAction::editNote: EditNote(); break;
@@ -308,8 +426,21 @@ public:
             }
         }
     }
-    void Menu(HWND owner) {
+    void Menu(HWND owner,std::wstring selected={}) {
         HMENU menu=CreatePopupMenu();
+        const auto* source=Panel(owner);
+        if(source && source->placement.kind==WidgetKind::launcher) {
+            AppendMenuW(menu,MF_STRING,306,L"添加应用快捷方式…");
+            if(!selected.empty()) {
+                AppendMenuW(menu,MF_STRING,301,L"打开");AppendMenuW(menu,MF_STRING,302,L"重命名…");
+                auto found=std::find_if(launchers.begin(),launchers.end(),[&](const auto& entry){return entry.id==selected;});
+                const size_t index=size_t(found-launchers.begin());
+                AppendMenuW(menu,MF_STRING|(index==0?MF_GRAYED:0),303,L"向前移动");
+                AppendMenuW(menu,MF_STRING|(index+1>=launchers.size()?MF_GRAYED:0),304,L"向后移动");
+                AppendMenuW(menu,MF_STRING,305,L"移除此入口");
+            }
+            AppendMenuW(menu,MF_STRING,307,L"刷新图标");AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
+        }
         AppendMenuW(menu,MF_STRING|(editing?MF_CHECKED:0),104,L"编辑布局");
         if (auto* panel=Panel(owner); panel && panel->placement.kind!=WidgetKind::toolbar)
             AppendMenuW(menu,MF_STRING|(panel->placement.pinned?MF_CHECKED:0),108,L"单独置顶此卡片");
@@ -321,6 +452,23 @@ public:
         POINT point{}; GetCursorPos(&point); SetForegroundWindow(controller);
         UINT command=TrackPopupMenu(menu,TPM_RETURNCMD|TPM_RIGHTBUTTON,point.x,point.y,0,controller,nullptr);
         DestroyMenu(menu);
+        if(command>=301 && command<=307) {
+            auto found=std::find_if(launchers.begin(),launchers.end(),[&](const auto& entry){return entry.id==selected;});
+            size_t index=size_t(found-launchers.begin());
+            if(command==306)PickLaunchers();
+            else if(command==307){launcherIcons.Refresh();renderer->ReleaseLauncherIcons();InvalidateLauncher();}
+            else if(found!=launchers.end()) {
+                if(command==301)LaunchEntry(index);
+                else if(command==302)RenameLauncher(index);
+                else {auto next=launchers;
+                    if(command==305)next.erase(next.begin()+std::ptrdiff_t(index));
+                    else if(command==303 && index>0){std::swap(next[index],next[index-1]);--index;}
+                    else if(command==304 && index+1<next.size()){std::swap(next[index],next[index+1]);++index;}
+                    if(CommitLaunchers(std::move(next))){launcherPage=index/launcherPageSize;if(command==305){launcherIcons.Pause();launcherIcons.Resume();renderer->ReleaseLauncherIcons();}InvalidateLauncher();}
+                }
+            }
+            PostMessageW(controller,WM_NULL,0,0);return;
+        }
         if (command==108) {
             if (auto* panel=Panel(owner)) TogglePin(*panel);
         } else if (command==100) QueueReveal();
@@ -389,6 +537,23 @@ public:
                 Show(visible); Log("shell_recovered"); return 0;
             }
             switch (msg) {
+            case WM_COPYDATA: {
+                const auto* data=reinterpret_cast<const COPYDATASTRUCT*>(lp);
+                if(!data || data->dwData!=0x41555241 || !data->lpData || data->cbData<4 || data->cbData>1024*1024 || data->cbData%sizeof(wchar_t))return 0;
+                const auto* text=static_cast<const wchar_t*>(data->lpData);const size_t count=data->cbData/sizeof(wchar_t);
+                if(text[count-1]!=0 || text[count-2]!=0)return 0;
+                std::vector<std::wstring> paths;
+                for(size_t offset=0;offset<count && text[offset];) {
+                    size_t length=wcsnlen_s(text+offset,count-offset);
+                    if(length>4096 || paths.size()>=launcherEntryLimit)return 0;
+                    paths.emplace_back(text+offset,length);offset+=length+1;
+                }
+                if(!paths.empty())AddLauncherPaths(paths);
+                return 1;
+            }
+            case launcherIconsMessage:
+                if(visible){InvalidateLauncher();if(log){auto stats=launcherIcons.ReadStats();log<<"launcher_icons bytes="<<stats.bytes<<" entries="<<stats.entries<<" bitmaps="<<renderer->LauncherBitmapBytes()<<'\n';log.flush();}}
+                return 0;
             case systemSampleMessage:
                 if (visible) {
                     const auto snapshot=systemSampler.Read();
@@ -502,7 +667,25 @@ public:
         case WM_LBUTTONDBLCLK:
             if (panel && panel->placement.kind==WidgetKind::notes) EditNote();
             return 0;
-        case WM_CONTEXTMENU: Menu(hwnd); return 0;
+        case WM_DROPFILES: {
+            auto drop=reinterpret_cast<HDROP>(wp);std::vector<std::wstring> paths;
+            if(panel && panel->placement.kind==WidgetKind::launcher) {
+                UINT count=std::min(DragQueryFileW(drop,0xffffffff,nullptr,0),UINT(launcherEntryLimit));
+                for(UINT i=0;i<count;++i){UINT length=DragQueryFileW(drop,i,nullptr,0);if(length>4096)continue;
+                    std::wstring path(size_t(length)+1,L'\0');DragQueryFileW(drop,i,path.data(),length+1);path.resize(length);paths.push_back(std::move(path));}
+            }
+            DragFinish(drop);if(!paths.empty())AddLauncherPaths(paths);return 0;
+        }
+        case WM_CONTEXTMENU: {
+            std::wstring selected;
+            if(panel && panel->placement.kind==WidgetKind::launcher && lp!=-1) {
+                POINT point{GET_X_LPARAM(lp),GET_Y_LPARAM(lp)};ScreenToClient(hwnd,&point);RECT r{};GetClientRect(hwnd,&r);
+                float scale=GetDpiForWindow(hwnd)/96.f;
+                auto action=HitWidgetAction(WidgetKind::launcher,point.x/scale,point.y/scale,r.right/scale,r.bottom/scale);
+                if(action>=WidgetAction::launcher0 && action<=WidgetAction::launcher5){size_t index=launcherPage*launcherPageSize+size_t(int(action)-int(WidgetAction::launcher0));if(index<launchers.size())selected=launchers[index].id;}
+            }
+            Menu(hwnd,std::move(selected));return 0;
+        }
         case WM_CLOSE: Show(false); return 0;
         }
         return DefWindowProcW(hwnd,msg,wp,lp);
@@ -570,6 +753,7 @@ public:
             panel.window=CreateWindowExW(WS_EX_LAYERED|WS_EX_TOOLWINDOW,L"AuraWorkspacePanel",L"Evoly Aura",
                 WS_POPUP,x,y,width,height,nullptr,nullptr,GetModuleHandleW(nullptr),this);
             if (!panel.window) throw std::runtime_error("Workspace panel creation failed");
+            if(panel.placement.kind==WidgetKind::launcher)DragAcceptFiles(panel.window,TRUE);
         }
     }
     int Run() {
@@ -581,7 +765,12 @@ public:
                 DWORD process=0; GetWindowThreadProcessId(existing,&process);
                 if (process) AllowSetForegroundWindow(process);
                 DWORD_PTR result{};
-                SendMessageTimeoutW(existing,controlMessage,100,0,SMTO_ABORTIFHUNG,2000,&result);
+                if(options.shortcutImports.empty())SendMessageTimeoutW(existing,controlMessage,100,0,SMTO_ABORTIFHUNG,2000,&result);
+                else {
+                    std::wstring paths;for(const auto& path:options.shortcutImports){paths+=path;paths.push_back(0);}paths.push_back(0);
+                    COPYDATASTRUCT data{0x41555241,DWORD(paths.size()*sizeof(wchar_t)),paths.data()};
+                    SendMessageTimeoutW(existing,WM_COPYDATA,0,reinterpret_cast<LPARAM>(&data),SMTO_ABORTIFHUNG,5000,&result);
+                }
             }
             return 0;
         }
@@ -592,6 +781,8 @@ public:
         store=std::make_unique<WorkspaceStore>(options.dataDirectory.empty()?UserDataDirectory():options.dataDirectory);
         auto placements=DefaultWorkspace((work.right-work.left)/Scale(),(work.bottom-work.top)/Scale());
         store->Load(placements,theme,opacity,checkedTasks); note=store->LoadNote();
+        launcherStore=std::make_unique<LauncherStore>(store->Directory());
+        try{launchers=launcherStore->Load();}catch(const std::exception&){launchers=DefaultLaunchers();launcherReadOnly=true;Log("launcher_config_invalid_preserved");}
         renderer=std::make_unique<Renderer>(Backend::software);
         WNDCLASSW cls{}; cls.hInstance=GetModuleHandleW(nullptr); cls.hCursor=LoadCursorW(nullptr,IDC_ARROW);
         cls.lpfnWndProc=WindowProc; cls.lpszClassName=L"AuraWorkspaceController";
@@ -601,9 +792,12 @@ public:
         cls.style=0; cls.lpfnWndProc=NoteProc; cls.lpszClassName=L"AuraNoteEditor";
         cls.hbrBackground=reinterpret_cast<HBRUSH>(COLOR_WINDOW+1);
         if (!RegisterClassW(&cls)) throw std::runtime_error("Note editor class failed");
+        cls.lpfnWndProc=RenameProc;cls.lpszClassName=L"AuraShortcutRename";
+        if(!RegisterClassW(&cls))throw std::runtime_error("Shortcut rename class failed");
         controller=CreateWindowExW(WS_EX_TOOLWINDOW,L"AuraWorkspaceController",L"Evoly Aura Controller",WS_POPUP,
             0,0,0,0,nullptr,nullptr,cls.hInstance,this);
         if (!controller) throw std::runtime_error("Workspace controller creation failed");
+        launcherIcons.Start(controller,launcherIconsMessage,store->Directory()/L"icon-cache");
         taskbarCreated=RegisterWindowMessageW(L"TaskbarCreated");
         AddTray();
         RegisterHotKey(controller,1,MOD_CONTROL|MOD_ALT|MOD_NOREPEAT,VK_F10);
@@ -612,11 +806,13 @@ public:
         CreatePanels(placements);
         renderer->LoadBackground(panels.front().window);
         Show(true);
+        if(!options.shortcutImports.empty())AddLauncherPaths(options.shortcutImports);
         if (options.preview) RaiseFloating();
         if (options.duration) SetTimer(controller,durationTimer,options.duration*1000,nullptr);
         Log("workspace_ready");
         MSG message{}; BOOL result{};
         while ((result=GetMessageW(&message,nullptr,0,0))>0) {
+            if(renameWindow && IsDialogMessageW(renameWindow,&message))continue;
             if (noteEditor && IsDialogMessageW(noteEditor,&message)) continue;
             TranslateMessage(&message); DispatchMessageW(&message);
         }

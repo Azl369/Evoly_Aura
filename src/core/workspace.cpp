@@ -31,10 +31,11 @@ std::vector<ActionArea> WidgetActions(WidgetKind kind, float w, float h) {
                 {WidgetAction::resetLayout,{w-120,20,96,36}}};
     case WidgetKind::launcher: {
         std::vector<ActionArea> out;
-        constexpr WidgetAction actions[] = {WidgetAction::launchExplorer,WidgetAction::launchDownloads,
-            WidgetAction::launchDocuments,WidgetAction::launchGithub,WidgetAction::launchSettings,WidgetAction::launchRecycle};
         float cell = (w - 64) / 3;
-        for (int i=0;i<6;++i) out.push_back({actions[i],{24+(i%3)*(cell+8),62.f+(i/3)*76,cell,68}});
+        for (int i=0;i<6;++i) out.push_back({WidgetAction(int(WidgetAction::launcher0)+i),{24+(i%3)*(cell+8),62.f+(i/3)*68,cell,60}});
+        out.push_back({WidgetAction::launcherPrevious,{24,h-36,28,24}});
+        out.push_back({WidgetAction::launcherNext,{60,h-36,28,24}});
+        out.push_back({WidgetAction::launcherAdd,{w-100,h-36,76,24}});
         return out;
     }
     case WidgetKind::focus: return {{WidgetAction::focus,{24,h-54,w-48,34}}};

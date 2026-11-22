@@ -108,6 +108,8 @@ void Renderer::DrawWidget(ID2D1RenderTarget* target, HWND window, const WidgetVi
             target->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(x+12,y+12),9,9),brush.Get(),1.5f);
             target->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(x+12,y+12),3,3),brush.Get(),1.5f);
             l(12,-1,12,3);l(12,21,12,25);l(-1,12,3,12);l(21,12,25,12);break;
+        case 6:
+            l(1,2,23,2);l(23,2,23,24);l(23,24,1,24);l(1,24,1,2);l(1,8,23,8);l(6,5,7,5);break;
         default:
             l(4,5,21,5);l(7,5,8,25);l(8,25,18,25);l(18,25,20,5);l(9,1,16,1);l(11,10,11,20);l(15,10,15,20);break;
         }
@@ -138,13 +140,32 @@ void Renderer::DrawWidget(ID2D1RenderTarget* target, HWND window, const WidgetVi
     }
     case WidgetKind::launcher: {
         heading(L"常用入口",L"QUICK ACCESS");
-        const wchar_t* labels[]{L"文件",L"下载",L"文档",L"项目主页",L"系统设置",L"回收站"};
-        for (size_t i=0;i<areas.size();++i) {
+        if(!launcherEllipsis_)Check(text_->CreateEllipsisTrimmingSign(widgetFonts_[1].Get(),&launcherEllipsis_),"Launcher ellipsis");
+        for (size_t i=0;i<view.launcherCount;++i) {
             auto a=areas[i];
+            const auto& tile=view.launchers[i];
             fill(rect(a.bounds),12,0xffffff,view.hovered==a.action?.13f:.045f);
-            icon(int(i),a.bounds.x+16,a.bounds.y+12,accent);
-            text(labels[i],1,D2D1::RectF(a.bounds.x+52,a.bounds.y+23,a.bounds.x+a.bounds.width-4,a.bounds.y+48),ink);
+            fill(D2D1::RectF(a.bounds.x+10,a.bounds.y+10,a.bounds.x+46,a.bounds.y+46),9,accent,.10f);
+            if(tile.image && !tile.image->pixels.empty()) {
+                auto found=std::find_if(launcherBitmaps_.begin(),launcherBitmaps_.end(),[&](const auto& cached){return cached.source==tile.image;});
+                if(found==launcherBitmaps_.end()) {
+                    if(launcherBitmaps_.size()>=launcherPageSize)launcherBitmaps_.erase(launcherBitmaps_.begin());
+                    LauncherBitmap cached;cached.source=tile.image;
+                    Check(target->CreateBitmap(D2D1::SizeU(tile.image->width,tile.image->height),tile.image->pixels.data(),tile.image->width*4,
+                        D2D1::BitmapProperties(D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM,D2D1_ALPHA_MODE_PREMULTIPLIED),96,96),&cached.bitmap),"Launcher icon bitmap");
+                    launcherBitmaps_.push_back(std::move(cached));found=std::prev(launcherBitmaps_.end());
+                }
+                target->DrawBitmap(found->bitmap.Get(),D2D1::RectF(a.bounds.x+14,a.bounds.y+14,a.bounds.x+42,a.bounds.y+42));
+            } else icon(tile.builtin>=0?tile.builtin:6,a.bounds.x+16,a.bounds.y+14,accent);
+            const DWRITE_TRIMMING trim{DWRITE_TRIMMING_GRANULARITY_CHARACTER,0,0},noTrim{DWRITE_TRIMMING_GRANULARITY_NONE,0,0};
+            widgetFonts_[1]->SetWordWrapping(DWRITE_WORD_WRAPPING_NO_WRAP);widgetFonts_[1]->SetTrimming(&trim,launcherEllipsis_.Get());
+            text(tile.name,1,D2D1::RectF(a.bounds.x+54,a.bounds.y+19,a.bounds.x+a.bounds.width-8,a.bounds.y+44),ink);
+            widgetFonts_[1]->SetTrimming(&noTrim,nullptr);widgetFonts_[1]->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
         }
+        if(!view.launcherCount)text(L"点击添加，放入应用快捷方式",1,D2D1::RectF(24,92,w-24,148),muted);
+        button(WidgetAction::launcherPrevious,L"‹");button(WidgetAction::launcherNext,L"›");
+        button(WidgetAction::launcherAdd,L"＋ 添加");
+        text(std::to_wstring(view.launcherPage+1)+L" / "+std::to_wstring(view.launcherPages),0,D2D1::RectF(102,h-32,w-108,h-10),muted);
         break;
     }
     case WidgetKind::focus: {
@@ -222,11 +243,13 @@ void Renderer::DrawWidget(ID2D1RenderTarget* target, HWND window, const WidgetVi
             if (!stats.memoryValid) return std::wstring(L"--");
             wchar_t value[48]{}; swprintf_s(value,L"%.1f GB",double(bytes)/(1024.0*1024*1024)); return std::wstring(value);
         };
-        line(24,140,w-24,140,0xffffff,.08f);
-        text(L"已用内存",0,D2D1::RectF(24,150,24+cell,169),muted);
-        text(L"可用内存",0,D2D1::RectF(40+cell,150,w-24,169),muted);
-        text(memory(stats.totalMemory-stats.availableMemory),2,D2D1::RectF(24,171,24+cell,195));
-        text(memory(stats.availableMemory),2,D2D1::RectF(40+cell,171,w-24,195));
+        const double used=stats.memoryValid && stats.totalMemory?double(stats.totalMemory-stats.availableMemory)/double(stats.totalMemory):0;
+        text(L"内存",0,D2D1::RectF(24,143,w-80,160),muted);
+        text(percent(used*100,stats.memoryValid),0,D2D1::RectF(w-80,143,w-24,160),ink,1,DWRITE_TEXT_ALIGNMENT_TRAILING);
+        fill(D2D1::RectF(24,167,w-24,173),3,0xffffff,.09f);
+        if(stats.memoryValid)fill(D2D1::RectF(24,167,24+(w-48)*float(used),173),3,used>.9?0xf0bc92:accent,.8f);
+        text(L"已用 "+memory(stats.totalMemory-stats.availableMemory),0,D2D1::RectF(24,182,w/2+8,200),muted);
+        text(L"可用 "+memory(stats.availableMemory),0,D2D1::RectF(w/2,182,w-24,200),muted,1,DWRITE_TEXT_ALIGNMENT_TRAILING);
         break;
     }
     case WidgetKind::appearance: {

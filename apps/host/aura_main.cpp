@@ -22,8 +22,11 @@ int WINAPI wWinMain(HINSTANCE,HINSTANCE,PWSTR,int) {
                 options.duration=unsigned(value);
             } else if (args[i]==L"--data-dir") options.dataDirectory=next();
             else if (args[i]==L"--log") options.log=next();
+            else if (args[i]==L"--add-shortcut") options.shortcutImports.push_back(next());
+            else if (!args[i].starts_with(L"--") && std::filesystem::path(args[i]).is_absolute()) options.shortcutImports.push_back(args[i]);
             else throw std::invalid_argument("Unknown option");
         }
+        if(options.shortcutImports.size()>256)throw std::invalid_argument("Too many shortcuts");
         return aura::RunDesktop(options);
     } catch (const std::exception& error) {
         if (!options.duration) MessageBoxA(nullptr,error.what(),"Evoly Aura",MB_OK|MB_ICONERROR);

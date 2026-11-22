@@ -20,6 +20,7 @@
 当前可操作：八块玻璃卡片、编辑/锁定、拖动/吸附/缩放、便签编辑与保存、
 专注计时、四套强调色与玻璃浓度、唤起/隐藏、布局重启恢复。
 新增右上角[系统监测卡片](docs/development/SYSTEM_MONITOR.md)：CPU、GPU、已用/可用内存，每两秒更新，隐藏时停止采样。
+内存使用一条占用横条；[常用入口支持自定义应用](docs/development/CUSTOM_LAUNCHERS.md)，可添加、删除、重命名、排序和翻页，图标底板随主题变化。
 
 ![系统监测原生卡片预览](assets/screenshots/system-monitor.png)
 
@@ -81,7 +82,8 @@ powershell -NoProfile -File .\tools\scripts\Validate-Workspace.ps1
 
 文档检查之外，可运行 tools/scripts/Build-Native.ps1 构建 Release 并执行 core 测试。
 tools/scripts/Test-Workspace.ps1 验证实际桌面交互与重启恢复；
-tools/scripts/Test-Probe.ps1 检查原有探针。此阶段不追加性能基准。
+tools/scripts/Test-Probe.ps1 检查原有探针；Test-CustomLaunchers.ps1 验证快捷方式交互及本次进程资源增量。
+完整性能预算验收仍后置，本次短时增量测量不代替长稳和多屏矩阵。
 
 ## 开发约定
 

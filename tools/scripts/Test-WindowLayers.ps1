@@ -30,6 +30,7 @@ public static class AuraLayerRegression {
     [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point point);
     [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr hwnd,uint flags);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd,IntPtr order,int x,int y,int w,int h,uint flags);
     [DllImport("user32.dll")] public static extern bool AllowSetForegroundWindow(uint pid);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] public static extern bool GetCursorPos(out Point point);
@@ -64,6 +65,15 @@ public static class AuraLayerRegression {
     }
     public static void Click(int x,int y) {
         SetCursorPos(x,y);mouse_event(2,0,0,0,UIntPtr.Zero);mouse_event(4,0,0,0,UIntPtr.Zero);
+    }
+    public static bool PrepareReference(IntPtr hwnd) {
+        // Hidden console launches may suppress the first ShowWindow. Raise only
+        // our test background, click it, then restore the ordinary window band.
+        SetWindowPos(hwnd,new IntPtr(-1),0,0,0,0,0x53);
+        Rect r;bool ready=GetWindowRect(hwnd,out r)&&OwnerAt(r.Left+8,r.Top+8)==(uint)System.Diagnostics.Process.GetCurrentProcess().Id;
+        if(ready)Click(r.Left+8,r.Top+8);
+        SetWindowPos(hwnd,new IntPtr(-2),0,0,0,0,0x13);
+        return ready;
     }
     public static int EditorTopmost() {
         var hwnd=FindWindow("AuraNoteEditor",null);
@@ -128,6 +138,8 @@ function Read-AuraPixel([int]$X,[int]$Y) {
     } finally { $taskGraphics.Dispose(); $taskBitmap.Dispose() }
 }
 try {
+    if(-not [AuraLayerRegression]::PrepareReference($taskReference.Handle)){throw 'Controlled background could not be activated; no external click sent.'}
+    [System.Windows.Forms.Application]::DoEvents()
     for ($taskTry=0;$taskTry -lt 100;$taskTry++) {
         $taskPanels = @([AuraLayerRegression]::Panels() | Sort-Object Top,Left)
         $taskReadyPath = Join-Path $taskRun 'events.log'

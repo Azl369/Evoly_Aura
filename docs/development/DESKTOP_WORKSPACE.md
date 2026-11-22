@@ -19,7 +19,7 @@ Aura.exe 是桌面框架，AuraProbe.exe 是独立诊断探针；二者职责分
 
 - 顶部「编辑布局」进入编辑模式：所有卡片暂时置顶，标题区拖动，右下角调整大小；结束编辑清除临时置顶。
 - 完成编辑后锁定位置，回到原先桌面/悬浮状态；布局自动保存。
-- 常用入口打开文件资源管理器、下载、文档、项目主页、系统设置和回收站。
+- 常用入口保留原六项，支持添加应用/快捷方式、移除、重命名、排序和翻页；详见 [自定义入口](CUSTOM_LAUNCHERS.md)。
 - 便签点击「编辑」或双击正文；原生编辑框支持中文、换行，点击保存后更新卡片。
 - 专注卡片开始、暂停和继续 25 分钟计时；退出应用后不恢复剩余时间。
 - 初次使用清单支持手动勾选，也随布局、便签和专注操作更新。
@@ -40,7 +40,8 @@ Aura.exe 是桌面框架，AuraProbe.exe 是独立诊断探针；二者职责分
 
 默认 %LOCALAPPDATA%\EvolyAura：
 workspace.ini 保存版本化布局、主题、玻璃浓度、清单与单卡置顶状态；
-note.txt 保存 UTF-8 便签。均先写临时文件，再替换目标文件。
+note.txt 保存 UTF-8 便签，launchers.txt 保存自定义入口；均先写临时文件，再替换目标文件。
+icon-cache 保存有界图标缓存。
 配置不在源码仓库内，不同步到 GitHub。
 
 --data-dir 可指定独立测试目录；--preview 预览；--duration 指定自动退出秒数；
@@ -56,20 +57,21 @@ note.txt 保存 UTF-8 便签。均先写临时文件，再替换目标文件。
 .\tools\scripts\Test-Workspace.ps1
 .\tools\scripts\Test-WindowLayers.ps1
 .\tools\scripts\Test-RealTray.ps1
+.\tools\scripts\Test-CustomLaunchers.ps1
 .\tools\scripts\Capture-Workspace.ps1
 .\tools\scripts\Test-Probe.ps1
 .\tools\scripts\Validate-Workspace.ps1
 ~~~
 
 单元测试覆盖默认布局无重叠、命中区域、吸附及带小数坐标的布局/中文便签持久化。
-Test-Workspace 实际驱动七个窗口：拖动、缩放、编辑锁定、主题、专注、
+Test-Workspace 实际驱动八个窗口：拖动、缩放、编辑锁定、主题、专注、
 中文便签、隐藏/恢复、桌面/HUD 往返及进程重启后的布局恢复。
 测试状态位于 D:\dev\tmp\Evoly_Aura，默认不触碰正式用户配置。
 Test-WindowLayers 验证默认桌面、普通悬浮非置顶、实际应用覆盖、红蓝背景像素变化、
 八轮隐藏后模式切换、托盘临时唤起/返回，以及单卡置顶/取消。
 
 `tools/scripts/Test-RealTray.ps1` 使用独立数据目录，以真实鼠标点击 Windows 通知区图标与「隐藏卡片」菜单。
-覆盖菜单隐藏、激活其他应用、重复托盘单击、Win+D、打开通知区后直接切换应用五类操作，各三轮；每次唤起检查七张卡片的实际命中位置。
+覆盖菜单隐藏、激活其他应用、重复托盘单击、Win+D、打开通知区后直接切换应用五类操作，各三轮；每次唤起检查八张卡片的实际命中位置。
 在这些场景前额外执行 50 轮真实菜单「唤起卡片 → 隐藏卡片」，区别于托盘左键；不把脚本发送控制消息当成真实菜单测试。
 测试会短暂操作前台与鼠标，运行前关闭 Aura，完成后恢复鼠标并退出测试实例；日志只保留在 D 盘。
 它使用自建参考窗口与独立测试配置；不仅检查 IsWindowVisible，还检查实际命中窗口和合成像素。

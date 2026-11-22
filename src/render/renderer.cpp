@@ -72,7 +72,14 @@ void Renderer::ReleaseAll() {
     surfaces_.clear();
     wallpaperBitmap_.Reset();
     icons_.clear();
+    ReleaseLauncherIcons();
     if (composition_) composition_->Commit();
+}
+void Renderer::ReleaseLauncherIcons(){launcherBitmaps_.clear();}
+size_t Renderer::LauncherBitmapBytes() const {
+    size_t bytes=0;
+    for(const auto& item:launcherBitmaps_)bytes+=item.source->pixels.size()*4;
+    return bytes;
 }
 void Renderer::Paint(HWND window, unsigned index, Material material, bool acrylicAccepted, const WidgetView* view) {
     RECT rect{};

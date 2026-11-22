@@ -3,13 +3,35 @@ param([string]$BuildRoot='D:\dev\build\Evoly_Aura',[string]$OutputRoot='D:\dev\t
 $ErrorActionPreference='Stop'
 if($ReferenceHost){
  Add-Type -AssemblyName System.Windows.Forms
- Add-Type 'using System;using System.Runtime.InteropServices;public static class AuraReferenceDpi{[DllImport("user32.dll")]public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr c);}'
+ Add-Type @'
+using System;using System.Runtime.InteropServices;
+public static class AuraReferenceDpi {
+ [StructLayout(LayoutKind.Sequential)]struct Rect{public int L,T,R,B;}
+ [StructLayout(LayoutKind.Sequential)]struct Point{public int X,Y;}
+ [DllImport("user32.dll")]public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr c);
+ [DllImport("user32.dll")]static extern bool SetWindowPos(IntPtr h,IntPtr order,int x,int y,int w,int height,uint flags);
+ [DllImport("user32.dll")]static extern bool GetWindowRect(IntPtr h,out Rect r);
+ [DllImport("user32.dll")]static extern IntPtr WindowFromPoint(Point p);
+ [DllImport("user32.dll")]static extern bool SetCursorPos(int x,int y);
+ [DllImport("user32.dll")]static extern void mouse_event(uint f,uint x,uint y,uint data,UIntPtr extra);
+ public static bool Prepare(IntPtr h){
+  SetWindowPos(h,new IntPtr(-1),0,0,0,0,0x53);
+  Rect r;bool ready=GetWindowRect(h,out r)&&WindowFromPoint(new Point{X=r.L+8,Y=r.T+8})==h;
+  if(ready){SetCursorPos(r.L+8,r.T+8);mouse_event(2,0,0,0,UIntPtr.Zero);mouse_event(4,0,0,0,UIntPtr.Zero);}
+  SetWindowPos(h,new IntPtr(-2),0,0,0,0,0x13);return ready;
+ }
+}
+'@
  $null=[AuraReferenceDpi]::SetThreadDpiAwarenessContext([IntPtr](-4))
  $taskForm=New-Object System.Windows.Forms.Form
  $taskForm.FormBorderStyle=[System.Windows.Forms.FormBorderStyle]::None
  $taskForm.StartPosition=[System.Windows.Forms.FormStartPosition]::Manual
  $taskForm.Bounds=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
- try{[System.Windows.Forms.Application]::Run($taskForm)}finally{$taskForm.Dispose()}
+ try{
+  $taskForm.Show();[System.Windows.Forms.Application]::DoEvents()
+  if(-not [AuraReferenceDpi]::Prepare($taskForm.Handle)){throw 'Controlled reference host could not be shown; no external click sent.'}
+  [System.Windows.Forms.Application]::Run($taskForm)
+ }finally{$taskForm.Dispose()}
  exit
 }
 if(Get-Process Aura -ErrorAction SilentlyContinue){throw 'Close Aura before the isolated real notification-area regression.'}

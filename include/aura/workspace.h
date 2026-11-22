@@ -4,6 +4,7 @@
 #include <vector>
 #include <filesystem>
 #include <cstdint>
+#include "aura/launcher.h"
 
 namespace aura {
 enum class WidgetKind { toolbar, clock, launcher, focus, notes, checklist, appearance, systemMonitor };
@@ -17,7 +18,8 @@ WindowLayer ResolveWindowLayer(bool desktopRequested, bool hostAvailable, bool e
 enum class WidgetAction {
     none, editLayout, resetLayout, editNote, focus,
     launchExplorer, launchDownloads, launchDocuments, launchGithub, launchSettings, launchRecycle,
-    task0, task1, task2, theme0, theme1, theme2, theme3, clearer, frostier
+    task0, task1, task2, theme0, theme1, theme2, theme3, clearer, frostier,
+    launcher0,launcher1,launcher2,launcher3,launcher4,launcher5,launcherPrevious,launcherNext,launcherAdd
 };
 struct DipRect { float x{}, y{}, width{}, height{}; };
 struct WidgetPlacement { WidgetKind kind{}; DipRect bounds; bool pinned = false; };
@@ -29,6 +31,8 @@ struct WidgetView {
     float opacity = .54f;
     WidgetAction hovered = WidgetAction::none;
     SystemSnapshot system;
+    std::array<LauncherTile,launcherPageSize> launchers;
+    size_t launcherCount=0,launcherPage=0,launcherPages=1;
     std::wstring note = L"把想法留在这里。\n双击便签，或点击右上角「编辑」。";
 };
 struct ActionArea { WidgetAction action; DipRect bounds; };

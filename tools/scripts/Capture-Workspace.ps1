@@ -30,12 +30,13 @@ public static class AuraWorkspaceCapture {
     [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
     [DllImport("user32.dll")] static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
     public static bool ActivateReference(IntPtr reference) {
-        SetForegroundWindow(reference);SetWindowPos(reference,IntPtr.Zero,0,0,0,0,0x13);
+        SetWindowPos(reference,new IntPtr(-1),0,0,0,0,0x53);
         Rect r;if(!GetWindowRect(reference,out r))return false;
         var point=new Point{X=r.Left+8,Y=r.Top+8};
-        if(WindowFromPoint(point)!=reference)return false;
+        if(WindowFromPoint(point)!=reference){SetWindowPos(reference,new IntPtr(-2),0,0,0,0,0x13);return false;}
         Point prior;GetCursorPos(out prior);
         SetCursorPos(point.X,point.Y);mouse_event(2,0,0,0,UIntPtr.Zero);mouse_event(4,0,0,0,UIntPtr.Zero);
+        SetWindowPos(reference,new IntPtr(-2),0,0,0,0,0x13);SetForegroundWindow(reference);
         SetCursorPos(prior.X,prior.Y);return true;
     }
     public static Rect[] Panels() {
