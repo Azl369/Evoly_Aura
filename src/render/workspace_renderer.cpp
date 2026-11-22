@@ -203,6 +203,32 @@ void Renderer::DrawWidget(ID2D1RenderTarget* target, HWND window, const WidgetVi
         text(std::to_wstring(completed)+L" / 3 已完成",0,D2D1::RectF(26,h-27,w-24,h-8),muted);
         break;
     }
+    case WidgetKind::systemMonitor: {
+        heading(L"系统监测",L"SYSTEM / 2s");
+        const auto& stats=view.system;
+        const float cell=(w-64)/2;
+        auto percent=[&](double value,bool valid) {
+            return valid?std::to_wstring(int(std::lround(value)))+L"%":std::wstring(L"--");
+        };
+        auto gauge=[&](float x,const wchar_t* label,double value,bool valid) {
+            text(label,0,D2D1::RectF(x,59,x+cell,76),muted);
+            text(percent(value,valid),4,D2D1::RectF(x,77,x+cell,118));
+            fill(D2D1::RectF(x,123,x+cell,127),2,0xffffff,.09f);
+            if (valid) fill(D2D1::RectF(x,123,x+cell*float(std::clamp(value,0.0,100.0)/100),127),2,accent,.8f);
+        };
+        gauge(24,L"CPU",stats.cpuPercent,stats.cpuValid);
+        gauge(40+cell,L"GPU · 最忙引擎",stats.gpuPercent,stats.gpuValid);
+        auto memory=[&](std::uint64_t bytes) {
+            if (!stats.memoryValid) return std::wstring(L"--");
+            wchar_t value[48]{}; swprintf_s(value,L"%.1f GB",double(bytes)/(1024.0*1024*1024)); return std::wstring(value);
+        };
+        line(24,140,w-24,140,0xffffff,.08f);
+        text(L"已用内存",0,D2D1::RectF(24,150,24+cell,169),muted);
+        text(L"可用内存",0,D2D1::RectF(40+cell,150,w-24,169),muted);
+        text(memory(stats.totalMemory-stats.availableMemory),2,D2D1::RectF(24,171,24+cell,195));
+        text(memory(stats.availableMemory),2,D2D1::RectF(40+cell,171,w-24,195));
+        break;
+    }
     case WidgetKind::appearance: {
         heading(L"外观",L"STYLE");
         const wchar_t* names[]{L"雾蓝",L"石墨",L"苔绿",L"暮光"};

@@ -171,7 +171,7 @@ try {
  for($taskMenuCycle=1;$taskMenuCycle -le $MenuCycles;$taskMenuCycle++){
   Select-AuraTrayMenu 100
   Write-AuraTrayState "actual-menu-reveal-$taskMenuCycle"
-  if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=7 topmost=0 hittable=7 '){throw "Actual Reveal menu failed after $taskMenuCycle cycles"}
+  if([AuraRealTray]::State() -notmatch '^panels=8 visible=8 floating=8 topmost=0 hittable=8 '){throw "Actual Reveal menu failed after $taskMenuCycle cycles"}
   Select-AuraTrayMenu 101
   Write-AuraTrayState "actual-menu-hide-$taskMenuCycle"
   if([AuraRealTray]::State() -notmatch ' visible=0 '){throw "Actual Hide menu failed after $taskMenuCycle cycles"}
@@ -183,7 +183,7 @@ try {
   Write-AuraTrayState "click-$taskCycle-180ms"
   Start-Sleep -Milliseconds 600
   Write-AuraTrayState "click-$taskCycle-780ms"
-  if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=7 topmost=0 hittable=7 '){throw "Not all seven cards are on screen after $HideMethod cycle $taskCycle"}
+  if([AuraRealTray]::State() -notmatch '^panels=8 visible=8 floating=8 topmost=0 hittable=8 '){throw "Not all eight cards are on screen after $HideMethod cycle $taskCycle"}
   if($HideMethod -eq 'tray'){$taskIcon=Open-AuraTrayIcon;Click-AuraElement $taskIcon}
   elseif($HideMethod -eq 'menu'){
    Select-AuraTrayMenu 101
@@ -198,13 +198,13 @@ try {
   }
   Write-AuraTrayState "$HideMethod-hide-$taskCycle"
   if($HideMethod -eq 'menu' -and [AuraRealTray]::State() -notmatch ' visible=0 '){throw 'Actual Hide menu did not hide cards'}
-  if($HideMethod -match 'reference' -and [AuraRealTray]::State() -notmatch ' floating=7 '){throw 'Foreground activation unexpectedly reparented the revealed cards'}
-  if($HideMethod -eq 'tray' -and [AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=7 topmost=0 hittable=7 '){throw 'Repeated tray selection did not keep all cards revealed'}
+  if($HideMethod -match 'reference' -and [AuraRealTray]::State() -notmatch ' floating=8 '){throw 'Foreground activation unexpectedly reparented the revealed cards'}
+  if($HideMethod -eq 'tray' -and [AuraRealTray]::State() -notmatch '^panels=8 visible=8 floating=8 topmost=0 hittable=8 '){throw 'Repeated tray selection did not keep all cards revealed'}
  }
  }
  $null=[AuraRealTray]::Command(107)
  if(-not $taskProcess.WaitForExit(10000) -or $taskProcess.ExitCode -ne 0){throw 'Aura did not exit cleanly'}
- Write-Output "PASS: $MenuCycles actual Reveal/Hide menu cycles plus tray selection, other app activation, Win+D and overflow-to-app activation; all seven cards hittable after every reveal."
+ Write-Output "PASS: $MenuCycles actual Reveal/Hide menu cycles plus tray selection, other app activation, Win+D and overflow-to-app activation; all eight cards hittable after every reveal."
 } finally {
  if($taskProcess -and -not $taskProcess.HasExited){$null=[AuraRealTray]::Command(107);if(-not $taskProcess.WaitForExit(5000)){Stop-Process -Id $taskProcess.Id}}
  if($taskReferenceProcess -and -not $taskReferenceProcess.HasExited){

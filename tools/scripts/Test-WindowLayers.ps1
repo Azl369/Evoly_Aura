@@ -113,7 +113,7 @@ function Activate-AuraReference {
 }
 function Assert-AuraFloating {
     $taskCurrent = @([AuraLayerRegression]::Panels())
-    if ($taskCurrent.Count -ne 7) { throw 'Panel count changed.' }
+    if ($taskCurrent.Count -ne 8) { throw 'Panel count changed.' }
     if (@($taskCurrent | Where-Object { -not $_.Visible -or $_.Parent -ne [IntPtr]::Zero -or $_.Topmost }).Count) {
         throw 'Normal floating panel is hidden, parented, or permanently topmost.'
     }
@@ -132,16 +132,16 @@ try {
         $taskPanels = @([AuraLayerRegression]::Panels() | Sort-Object Top,Left)
         $taskReadyPath = Join-Path $taskRun 'events.log'
         $taskReady = (Test-Path $taskReadyPath) -and (Select-String -LiteralPath $taskReadyPath -Pattern '^workspace_ready$' -Quiet)
-        if ($taskPanels.Count -eq 7 -and $taskReady) { break }
+        if ($taskPanels.Count -eq 8 -and $taskReady) { break }
         if ($taskProcess.HasExited) { throw 'Aura exited during startup.' }
         Start-Sleep -Milliseconds 100
     }
-    if ($taskPanels.Count -ne 7) { throw 'Default desktop panels missing.' }
+    if ($taskPanels.Count -ne 8) { throw 'Default desktop panels missing.' }
     if (@($taskPanels | Where-Object { $_.Parent -eq [IntPtr]::Zero -or $_.Topmost -or -not $_.Visible }).Count) {
         $taskPanels | Format-Table Left,Top,Visible,Topmost,Parent
         throw 'Default desktop mode is not attached, visible and non-topmost.'
     }
-    $taskClock = $taskPanels[1]
+    $taskClock = $taskPanels[2]
     $taskX = $taskClock.Right - 35
     $taskY = [int](($taskClock.Top + $taskClock.Bottom)/2)
     $taskReference.BringToFront(); $taskReference.Activate()
@@ -209,7 +209,7 @@ try {
         throw 'Escape did not hide revealed cards.'
     }
     Invoke-AuraLayerCommand 104
-    if (@([AuraLayerRegression]::Panels() | Where-Object Topmost).Count -ne 7) { throw 'Layout editor was not temporarily raised.' }
+    if (@([AuraLayerRegression]::Panels() | Where-Object Topmost).Count -ne 8) { throw 'Layout editor was not temporarily raised.' }
     Invoke-AuraLayerCommand 104
     if (@([AuraLayerRegression]::Panels() | Where-Object { $_.Parent -eq [IntPtr]::Zero -or $_.Topmost }).Count) {
         throw 'Finishing layout edit left cards permanently topmost.'

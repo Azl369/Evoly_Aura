@@ -1,6 +1,7 @@
 #include "aura/desktop_app.h"
 #include "aura/render.h"
 #include "aura/workspace.h"
+#include "aura/system_sampler.h"
 #include <windowsx.h>
 #include <shellapi.h>
 #include <shlobj.h>
@@ -12,7 +13,7 @@
 namespace aura {
 namespace {
 constexpr UINT trayMessage=WM_APP+1,controlMessage=WM_APP+2;
-constexpr UINT revealMessage=WM_APP+4;
+constexpr UINT revealMessage=WM_APP+4,systemSampleMessage=WM_APP+5;
 constexpr UINT minuteTimer=1,focusTimer=2,durationTimer=3;
 struct DesktopPanel {
     HWND window{};
@@ -53,12 +54,14 @@ public:
     DesktopOptions options;
     std::unique_ptr<Renderer> renderer;
     std::unique_ptr<WorkspaceStore> store;
+    SystemSampler systemSampler;
     std::vector<DesktopPanel> panels;
     HWND controller{},noteEditor{},noteInput{},desktopHost{};
     HANDLE instance{};
     bool editing=false,desktop=true,visible=true,focusRunning=false,failed=false,warned=false;
     bool temporaryReveal=false,changingLayer=false;
     bool trayVersion4=false,revealQueued=false;
+    bool systemSampleLogged=false;
     WPARAM revealGeneration=0;
     int theme=0,checkedTasks=0,remaining=1500;
     float opacity=.54f;
@@ -72,6 +75,7 @@ public:
     RECT dragBounds{};
     std::chrono::steady_clock::time_point focusEnd;
     ~DesktopApp() {
+        systemSampler.Stop();
         if (noteEditor && IsWindow(noteEditor)) DestroyWindow(noteEditor);
         NOTIFYICONDATAW data{sizeof(data)}; data.hWnd=controller; data.uID=1;
         if (controller) Shell_NotifyIconW(NIM_DELETE,&data);
@@ -109,12 +113,13 @@ public:
             }
         }
     }
-    WidgetView View(const DesktopPanel& panel) const {
+    WidgetView View(const DesktopPanel& panel) {
         WidgetView view;
         view.kind=panel.placement.kind; view.editing=editing; view.desktop=OnDesktop();
         view.sampleWallpaper=panel.attached; view.temporaryReveal=temporaryReveal;
         view.theme=theme; view.opacity=opacity; view.note=note; view.hovered=panel.hovered;
         view.focusRunning=focusRunning; view.focusSeconds=remaining; view.checkedTasks=checkedTasks;
+        if (panel.placement.kind==WidgetKind::systemMonitor) view.system=systemSampler.Read();
         return view;
     }
     void Paint(DesktopPanel& panel) {
@@ -189,6 +194,7 @@ public:
         renderer->ReleaseAll(); CreatePanels(placements); Log("panels_recreated");
     }
     void Show(bool show) {
+        if (!show) { systemSampler.Stop(); systemSampleLogged=false; }
         visible=show;
         if (!show) { ++revealGeneration; temporaryReveal=false; revealQueued=false; }
         if (show) EnsurePanels();
@@ -199,6 +205,7 @@ public:
             InvalidateAll();
             for (auto& panel:panels) UpdateWindow(panel.window);
             ScheduleMinute();
+            systemSampler.Start(controller,systemSampleMessage);
         }
         else { KillTimer(controller,minuteTimer); renderer->ReleaseAll(); }
         Log(show?"shown":"hidden");
@@ -382,6 +389,17 @@ public:
                 Show(visible); Log("shell_recovered"); return 0;
             }
             switch (msg) {
+            case systemSampleMessage:
+                if (visible) {
+                    const auto snapshot=systemSampler.Read();
+                    if (log && !systemSampleLogged && snapshot.cpuValid && snapshot.memoryValid) {
+                        systemSampleLogged=true;
+                        log<<"system_sample cpu="<<(snapshot.cpuValid?snapshot.cpuPercent:-1)
+                        <<" gpu="<<(snapshot.gpuValid?snapshot.gpuPercent:-1)
+                        <<" available="<<snapshot.availableMemory<<" total="<<snapshot.totalMemory<<'\n'; log.flush(); }
+                    for (auto& p:panels) if (p.placement.kind==WidgetKind::systemMonitor) InvalidateRect(p.window,nullptr,FALSE);
+                }
+                return 0;
             case trayMessage: {
                 const UINT event=trayVersion4?LOWORD(lp):UINT(lp);
                 const UINT icon=trayVersion4?HIWORD(lp):UINT(wp);

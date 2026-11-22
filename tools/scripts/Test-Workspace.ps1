@@ -72,16 +72,16 @@ $taskProcess = Start-Process $taskExe -ArgumentList $taskArguments -WindowStyle 
 try {
     for ($taskTry=0;$taskTry -lt 100;$taskTry++) {
         $taskPanels = @([AuraWorkspaceTest]::Panels() | Sort-Object Top,Left)
-        if ($taskPanels.Count -eq 7) { break }
+        if ($taskPanels.Count -eq 8) { break }
         if ($taskProcess.HasExited) { throw 'Aura exited before readiness.' }
         Start-Sleep -Milliseconds 100
     }
-    if ($taskPanels.Count -ne 7) { throw 'Seven workspace panels were not created.' }
+    if ($taskPanels.Count -ne 8) { throw 'Eight workspace panels were not created.' }
     Start-Sleep -Milliseconds 500
     $taskDuplicate = Start-Process $taskExe -ArgumentList '--preview' -WindowStyle Hidden -PassThru
     if (-not $taskDuplicate.WaitForExit(10000) -or $taskDuplicate.ExitCode -ne 0) { throw 'Duplicate launch did not activate the existing instance.' }
-    if (@([AuraWorkspaceTest]::Panels()).Count -ne 7) { throw 'Duplicate launch created extra panels.' }
-    $taskClock = $taskPanels[1]
+    if (@([AuraWorkspaceTest]::Panels()).Count -ne 8) { throw 'Duplicate launch created extra panels.' }
+    $taskClock = $taskPanels[2]
     if (-not [AuraWorkspaceTest]::Command(104)) { throw 'Edit command failed.' }
     [AuraWorkspaceTest]::Drag($taskClock.Hwnd,40,30,60,20)
     $taskMoved = New-Object AuraWorkspaceTest+Rect
@@ -115,7 +115,7 @@ try {
     $null = [AuraWorkspaceTest]::Command(102)
     $taskAttached = 0
     foreach ($taskPanel in $taskPanels) { if ([AuraWorkspaceTest]::GetParent($taskPanel.Hwnd) -ne [IntPtr]::Zero) { $taskAttached++ } }
-    if ($taskAttached -ne 7) { throw "Desktop attachment incomplete: $taskAttached/7." }
+    if ($taskAttached -ne 8) { throw "Desktop attachment incomplete: $taskAttached/8." }
     $null = [AuraWorkspaceTest]::Command(103)
     $taskAfterMode = New-Object AuraWorkspaceTest+Rect
     $null = [AuraWorkspaceTest]::GetWindowRect($taskClock.Hwnd,[ref]$taskAfterMode)
@@ -135,7 +135,7 @@ try {
     if ((Get-Content -Raw -Encoding utf8 (Join-Path $taskData 'note.txt')) -cne $taskNote) { throw 'Note did not survive restart.' }
     $null = [AuraWorkspaceTest]::Command(107)
     if (-not $taskProcess.WaitForExit(10000) -or $taskProcess.ExitCode -ne 0) { throw 'Restarted Aura did not exit.' }
-    Write-Output 'PASS: seven panels, real drag/resize, edit lock, theme, focus, UTF-8 note, hide/restore, desktop/HUD and restart persistence.'
+    Write-Output 'PASS: eight panels, real drag/resize, edit lock, theme, focus, UTF-8 note, hide/restore, desktop/HUD and restart persistence.'
     Write-Output "Local test state and logs: $taskRun"
 } finally {
     if (-not $taskProcess.HasExited) { Stop-Process -Id $taskProcess.Id }

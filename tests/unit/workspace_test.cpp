@@ -13,7 +13,7 @@ int wmain(int argc,wchar_t** argv) {
         Require(aura::ResolveWindowLayer(true,true,false,true)==aura::WindowLayer::topmost,"Explicit pin owns topmost");
         Require(aura::ResolveWindowLayer(true,true,true,false)==aura::WindowLayer::topmost,"Editing is temporary topmost");
         auto widgets=aura::DefaultWorkspace(1600,1000);
-        Require(widgets.size()==7,"Seven workspace panels");
+        Require(widgets.size()==8,"Eight workspace panels");
         for (const auto& widget:widgets) {
             auto size=aura::MinimumWidgetSize(widget.kind);
             auto areas=aura::WidgetActions(widget.kind,size.width,size.height);
@@ -41,6 +41,14 @@ int wmain(int argc,wchar_t** argv) {
         store.Load(loaded,theme,opacity,tasks);
         Require(theme==2 && tasks==5 && std::abs(opacity-.62f)<.001,"Appearance roundtrip");
         Require(std::abs(loaded[2].bounds.x-321.6f)<.001f && loaded[3].pinned,"Fractional-DPI placement and pinned roundtrip");
+        auto legacy=widgets; legacy.resize(7);
+        store.Save(legacy,2,.62f,5);
+        auto migrated=aura::DefaultWorkspace(2048,1104);
+        const auto monitor=migrated.back().bounds;
+        store.Load(migrated,theme,opacity,tasks);
+        Require(migrated.size()==8 && migrated.back().kind==aura::WidgetKind::systemMonitor,"Legacy layout adds monitor");
+        Require(std::abs(migrated[2].bounds.x-321.6f)<.001f && migrated[3].pinned,"Legacy layout preserves original cards");
+        Require(migrated.back().bounds.x==monitor.x && migrated.back().bounds.y==monitor.y,"Monitor uses new default location");
         std::wstring note=L"浮光桌面\n第二行：保留中文。";
         store.SaveNote(note);
         Require(store.LoadNote()==note,"UTF-8 note roundtrip");

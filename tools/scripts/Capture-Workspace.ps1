@@ -60,7 +60,7 @@ $taskArguments = @('--preview','--duration',60,'--data-dir',('"' + (Join-Path $O
 $taskProcess = Start-Process (Join-Path $BuildRoot 'Release\Aura.exe') -ArgumentList $taskArguments -WindowStyle Hidden -PassThru
 function Save-AuraWorkspaceImage([string]$Name) {
     $taskRects = @([AuraWorkspaceCapture]::Panels())
-    if ($taskRects.Count -ne 7) { throw "Expected seven panels, found $($taskRects.Count)." }
+    if ($taskRects.Count -ne 8) { throw "Expected eight panels, found $($taskRects.Count)." }
     $taskLeft = ($taskRects | Measure-Object Left -Minimum).Minimum - 20
     $taskTop = ($taskRects | Measure-Object Top -Minimum).Minimum - 20
     $taskRight = ($taskRects | Measure-Object Right -Maximum).Maximum + 20

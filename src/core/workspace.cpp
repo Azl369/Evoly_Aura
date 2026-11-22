@@ -11,6 +11,8 @@ WindowLayer ResolveWindowLayer(bool desktopRequested,bool hostAvailable,bool edi
 std::vector<WidgetPlacement> DefaultWorkspace(float width, float height) {
     float x = std::max(20.f, (width - 1160.f) / 2);
     float y = std::max(24.f, (height - 620.f) / 2 - 16);
+    const float monitorX=std::max(16.f,width-388.f);
+    if (x+1160>monitorX && y<256) y=256;
     return {
         {WidgetKind::toolbar, {x, y, 1160, 76}},
         {WidgetKind::clock, {x, y + 100, 360, 240}},
@@ -18,7 +20,8 @@ std::vector<WidgetPlacement> DefaultWorkspace(float width, float height) {
         {WidgetKind::focus, {x + 880, y + 100, 280, 240}},
         {WidgetKind::notes, {x, y + 360, 360, 260}},
         {WidgetKind::checklist, {x + 380, y + 360, 480, 260}},
-        {WidgetKind::appearance, {x + 880, y + 360, 280, 260}}
+        {WidgetKind::appearance, {x + 880, y + 360, 280, 260}},
+        {WidgetKind::systemMonitor, {monitorX,28,328,204}}
     };
 }
 std::vector<ActionArea> WidgetActions(WidgetKind kind, float w, float h) {
@@ -62,6 +65,7 @@ DipRect MinimumWidgetSize(WidgetKind kind) {
     case WidgetKind::checklist: return {0,0,380,250};
     case WidgetKind::notes: return {0,0,300,220};
     case WidgetKind::appearance: return {0,0,280,260};
+    case WidgetKind::systemMonitor: return {0,0,300,204};
     default: return {0,0,280,240};
     }
 }

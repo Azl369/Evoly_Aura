@@ -3,9 +3,15 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <cstdint>
 
 namespace aura {
-enum class WidgetKind { toolbar, clock, launcher, focus, notes, checklist, appearance };
+enum class WidgetKind { toolbar, clock, launcher, focus, notes, checklist, appearance, systemMonitor };
+struct SystemSnapshot {
+    bool cpuValid=false, gpuValid=false, memoryValid=false;
+    double cpuPercent=0, gpuPercent=0;
+    std::uint64_t totalMemory=0, availableMemory=0;
+};
 enum class WindowLayer { desktop, floating, topmost };
 WindowLayer ResolveWindowLayer(bool desktopRequested, bool hostAvailable, bool editing, bool pinned);
 enum class WidgetAction {
@@ -22,6 +28,7 @@ struct WidgetView {
     int theme = 0, focusSeconds = 1500, checkedTasks = 0;
     float opacity = .54f;
     WidgetAction hovered = WidgetAction::none;
+    SystemSnapshot system;
     std::wstring note = L"把想法留在这里。\n双击便签，或点击右上角「编辑」。";
 };
 struct ActionArea { WidgetAction action; DipRect bounds; };
