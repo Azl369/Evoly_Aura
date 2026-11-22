@@ -123,7 +123,6 @@ void Renderer::DrawWidget(ID2D1RenderTarget* target, HWND window, const WidgetVi
         text(L"Evoly Aura",3,D2D1::RectF(80,16,280,42));
         text(view.editing?L"拖动标题区，右下角调整大小":view.temporaryReveal?L"临时唤起 · Esc 回到桌面":L"我的桌面 / 浮光",0,D2D1::RectF(80,46,450,64),muted);
         button(WidgetAction::editLayout,view.editing?L"完成编辑":L"编辑布局",view.editing);
-        button(WidgetAction::sendToDesktop,L"收回桌面");
         button(WidgetAction::resetLayout,L"重置布局");
         break;
     case WidgetKind::clock: {

@@ -24,8 +24,7 @@ std::vector<WidgetPlacement> DefaultWorkspace(float width, float height) {
 std::vector<ActionArea> WidgetActions(WidgetKind kind, float w, float h) {
     switch (kind) {
     case WidgetKind::toolbar:
-        return {{WidgetAction::editLayout,{w-418,20,126,36}},
-                {WidgetAction::sendToDesktop,{w-280,20,148,36}},
+        return {{WidgetAction::editLayout,{w-258,20,126,36}},
                 {WidgetAction::resetLayout,{w-120,20,96,36}}};
     case WidgetKind::launcher: {
         std::vector<ActionArea> out;

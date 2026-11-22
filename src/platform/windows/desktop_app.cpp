@@ -277,8 +277,6 @@ public:
     void Action(WidgetAction action) {
         switch (action) {
         case WidgetAction::editLayout: SetEditing(!editing); break;
-        case WidgetAction::sendToDesktop:
-            ChangeMode(true); break;
         case WidgetAction::resetLayout: Reset(); break;
         case WidgetAction::editNote: EditNote(); break;
         case WidgetAction::focus:
@@ -313,7 +311,6 @@ public:
     void Menu(HWND owner) {
         HMENU menu=CreatePopupMenu();
         AppendMenuW(menu,MF_STRING|(editing?MF_CHECKED:0),104,L"编辑布局");
-        AppendMenuW(menu,MF_STRING|((OnDesktop() && visible && !editing)?MF_GRAYED:0),102,L"收回桌面（保留卡片）");
         if (auto* panel=Panel(owner); panel && panel->placement.kind!=WidgetKind::toolbar)
             AppendMenuW(menu,MF_STRING|(panel->placement.pinned?MF_CHECKED:0),108,L"单独置顶此卡片");
         AppendMenuW(menu,MF_STRING,105,L"重置布局");
@@ -438,7 +435,6 @@ public:
                 return 0;
             case WM_HOTKEY:
                 if (wp==1) ToggleVisibility();
-                else if (wp==2) Action(WidgetAction::sendToDesktop);
                 else if (wp==3) { Save(); PostQuitMessage(0); }
                 else if (wp==4) SetEditing(!editing);
                 return 0;
@@ -621,7 +617,6 @@ public:
         taskbarCreated=RegisterWindowMessageW(L"TaskbarCreated");
         AddTray();
         RegisterHotKey(controller,1,MOD_CONTROL|MOD_ALT|MOD_NOREPEAT,VK_F10);
-        RegisterHotKey(controller,2,MOD_CONTROL|MOD_ALT|MOD_NOREPEAT,VK_F11);
         RegisterHotKey(controller,3,MOD_CONTROL|MOD_ALT|MOD_NOREPEAT,VK_F12);
         RegisterHotKey(controller,4,MOD_CONTROL|MOD_ALT|MOD_NOREPEAT,VK_F9);
         CreatePanels(placements);

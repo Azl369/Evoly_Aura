@@ -9,7 +9,7 @@ enum class WidgetKind { toolbar, clock, launcher, focus, notes, checklist, appea
 enum class WindowLayer { desktop, floating, topmost };
 WindowLayer ResolveWindowLayer(bool desktopRequested, bool hostAvailable, bool editing, bool pinned);
 enum class WidgetAction {
-    none, editLayout, sendToDesktop, resetLayout, editNote, focus,
+    none, editLayout, resetLayout, editNote, focus,
     launchExplorer, launchDownloads, launchDocuments, launchGithub, launchSettings, launchRecycle,
     task0, task1, task2, theme0, theme1, theme2, theme3, clearer, frostier
 };

@@ -54,16 +54,6 @@ public static class AuraRealTray {
   }return false;
  }
  public static bool Command(uint c){UIntPtr r;var h=Window("AuraWorkspaceController");return h!=IntPtr.Zero&&SendMessageTimeout(h,0x8002,new UIntPtr(c),IntPtr.Zero,3,5000,out r)!=IntPtr.Zero;}
- [DllImport("user32.dll")]static extern uint GetDpiForWindow(IntPtr h);
- public static bool ClickReturnButton(){
-  bool clicked=false;
-  EnumWindows((h,d)=>{var name=new StringBuilder(128);GetClassName(h,name,128);Rect r;GetWindowRect(h,out r);
-   if(name.ToString()=="AuraWorkspacePanel" && IsWindowVisible(h) && r.Right-r.Left>(r.Bottom-r.Top)*5){
-    double scale=GetDpiForWindow(h)/96.0;int x=r.Right-(int)(206*scale),y=r.Top+(int)(38*scale);
-    if(WindowFromPoint(new Point{X=x,Y=y})==h){Move(x,y);System.Threading.Thread.Sleep(250);Click(x,y,false);clicked=true;return false;}
-   }return true;
-  },IntPtr.Zero);return clicked;
- }
  public static string State(){
   int count=0,visible=0,root=0,top=0,hittable=0;var seen=new HashSet<IntPtr>();
   CB cb=(h,d)=>{var s=new StringBuilder(128);GetClassName(h,s,128);
@@ -161,28 +151,6 @@ try {
  }
  if(-not (Test-Path $taskReady) -or -not (Select-String -LiteralPath $taskReady -Pattern '^workspace_ready$' -Quiet)){throw 'Aura startup timed out'}
  Write-AuraTrayState 'initial'
- # Reproduce the reported route: floating -> actual Return menu -> hide -> reveal.
- $null=[AuraRealTray]::Command(103)
- for($taskReturnCycle=1;$taskReturnCycle -le 3;$taskReturnCycle++){
-  Select-AuraTrayMenu 102
-  Write-AuraTrayState "return-menu-$taskReturnCycle"
-  if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=0 topmost=0 '){throw 'Return did not place all cards on desktop'}
-  Select-AuraTrayMenu 101
-  if([AuraRealTray]::State() -notmatch ' visible=0 '){throw 'Hide after Return did not hide cards'}
-  $taskIcon=Open-AuraTrayIcon;Click-AuraElement $taskIcon
-  Start-Sleep -Milliseconds 600
-  Write-AuraTrayState "return-hide-reveal-$taskReturnCycle"
-  if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=7 topmost=0 hittable=7 '){throw 'Reveal after Return menu failed'}
- }
- if(-not [AuraRealTray]::ClickReturnButton()){throw 'Toolbar Return button is not safely clickable'}
- Start-Sleep -Milliseconds 350
- Write-AuraTrayState 'toolbar-return'
- if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=0 topmost=0 '){throw 'Toolbar Return did not place cards on desktop'}
- Select-AuraTrayMenu 101
- if([AuraRealTray]::State() -notmatch ' visible=0 '){throw 'Hide after toolbar Return failed'}
- $taskIcon=Open-AuraTrayIcon;Click-AuraElement $taskIcon
- Start-Sleep -Milliseconds 600
- if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=7 topmost=0 hittable=7 '){throw 'Reveal after toolbar Return failed'}
  foreach($HideMethod in @('menu','reference','tray','tray-reference','desktop')){
  for($taskCycle=1;$taskCycle -le 3;$taskCycle++){
   $taskIcon=Open-AuraTrayIcon
