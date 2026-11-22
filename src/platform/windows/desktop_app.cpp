@@ -181,7 +181,7 @@ public:
     }
     void Show(bool show) {
         visible=show;
-        if (!show) { temporaryReveal=false; revealActivated=false; }
+        if (!show) { ++revealGeneration; temporaryReveal=false; revealActivated=false; revealQueued=false; }
         if (show) EnsurePanels();
         if (show && !panels.empty()) renderer->LoadBackground(panels.front().window);
         if (show) SetMode();
@@ -221,10 +221,10 @@ public:
     void QueueReveal() {
         // Leave the Shell callback before activating/reparenting windows. A tray
         // selection always reveals; opening its overflow can already deactivate us.
-        if (!revealQueued) revealQueued=PostMessageW(controller,revealMessage,0,0)!=FALSE;
+        if (!revealQueued) revealQueued=PostMessageW(controller,revealMessage,++revealGeneration,0)!=FALSE;
     }
     void ReturnToDesktop() {
-        if (!temporaryReveal) return;
+        if (!temporaryReveal || !visible) return;
         temporaryReveal=false; Show(true); Log("reveal_returned_to_desktop");
     }
     void ToggleVisibility() {
@@ -232,6 +232,7 @@ public:
         else Reveal();
     }
     void ChangeMode(bool wantDesktop) {
+        ++revealGeneration; revealQueued=false; revealActivated=false;
         desktop=wantDesktop; editing=false; temporaryReveal=false;
         Show(true);
         if (!wantDesktop) RaiseFloating();
@@ -276,8 +277,8 @@ public:
     void Action(WidgetAction action) {
         switch (action) {
         case WidgetAction::editLayout: SetEditing(!editing); break;
-        case WidgetAction::toggleMode:
-            ChangeMode(!OnDesktop()); break;
+        case WidgetAction::sendToDesktop:
+            ChangeMode(true); break;
         case WidgetAction::resetLayout: Reset(); break;
         case WidgetAction::editNote: EditNote(); break;
         case WidgetAction::focus:
@@ -312,12 +313,12 @@ public:
     void Menu(HWND owner) {
         HMENU menu=CreatePopupMenu();
         AppendMenuW(menu,MF_STRING|(editing?MF_CHECKED:0),104,L"编辑布局");
-        AppendMenuW(menu,MF_STRING,desktop?103:102,desktop?L"切为悬浮模式":L"回到桌面模式");
+        AppendMenuW(menu,MF_STRING|((OnDesktop() && visible && !editing)?MF_GRAYED:0),102,L"收回桌面（保留卡片）");
         if (auto* panel=Panel(owner); panel && panel->placement.kind!=WidgetKind::toolbar)
             AppendMenuW(menu,MF_STRING|(panel->placement.pinned?MF_CHECKED:0),108,L"单独置顶此卡片");
         AppendMenuW(menu,MF_STRING,105,L"重置布局");
         AppendMenuW(menu,MF_STRING,100,L"唤起卡片");
-        if (visible) AppendMenuW(menu,MF_STRING,101,L"隐藏卡片");
+        AppendMenuW(menu,MF_STRING|(visible?0:MF_GRAYED),101,L"隐藏卡片");
         AppendMenuW(menu,MF_SEPARATOR,0,nullptr);
         AppendMenuW(menu,MF_STRING,107,L"退出 Evoly Aura");
         menuOpen=true;
@@ -415,7 +416,8 @@ public:
                 return 0;
             }
             case revealMessage:
-                revealQueued=false; Reveal(); return 0;
+                if (wp==revealGeneration) { revealQueued=false; Reveal(); }
+                return 0;
             case controlMessage:
                 if (wp==100) Reveal();
                 else if (wp==101) Show(false);
@@ -436,7 +438,7 @@ public:
                 return 0;
             case WM_HOTKEY:
                 if (wp==1) ToggleVisibility();
-                else if (wp==2) Action(WidgetAction::toggleMode);
+                else if (wp==2) Action(WidgetAction::sendToDesktop);
                 else if (wp==3) { Save(); PostQuitMessage(0); }
                 else if (wp==4) SetEditing(!editing);
                 return 0;

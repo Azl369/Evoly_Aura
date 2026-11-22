@@ -26,7 +26,8 @@ Aura.exe 是桌面框架，AuraProbe.exe 是独立诊断探针；二者职责分
 - 外观卡片选择四套强调色，调节玻璃浓度。
 - 桌面状态下托盘单击、右键「唤起卡片」或 Ctrl+Alt+F10 临时浮起卡片；按 Esc 或激活其他应用后回到桌面。
 - 临时唤起和普通悬浮都不永久置顶，点击普通应用可让它正常覆盖卡片。
-- 托盘可明确隐藏卡片；隐藏后切换桌面/悬浮会自动恢复显示。
+- 「唤起卡片」临时浮起供操作；「收回桌面（保留卡片）」让卡片继续留在桌面、让出前台；「隐藏卡片」完全收起。
+- 普通菜单和工具条不再切换持久的桌面/悬浮模式，Ctrl+Alt+F11 统一收回桌面。普通悬浮预览仍由 -Preview 提供。
 - 托盘单击始终执行唤起，重复点击不会反向隐藏；收起使用右键「隐藏卡片」。打开通知区或托盘菜单不会触发自动回桌面的重挂载。
 - 卡片右键菜单提供单卡置顶；只有该卡片获得持续置顶，取消后清除其置顶层级。
 - 普通便签编辑窗口也不永久置顶；布局编辑期间才随编辑态临时置顶。
@@ -53,6 +54,7 @@ note.txt 保存 UTF-8 便签。均先写临时文件，再替换目标文件。
 .\tools\scripts\Build-Native.ps1
 .\tools\scripts\Test-Workspace.ps1
 .\tools\scripts\Test-WindowLayers.ps1
+.\tools\scripts\Test-RealTray.ps1
 .\tools\scripts\Capture-Workspace.ps1
 .\tools\scripts\Test-Probe.ps1
 .\tools\scripts\Validate-Workspace.ps1
@@ -67,6 +69,7 @@ Test-WindowLayers 验证默认桌面、普通悬浮非置顶、实际应用覆�
 
 `tools/scripts/Test-RealTray.ps1` 使用独立数据目录，以真实鼠标点击 Windows 通知区图标与「隐藏卡片」菜单。
 覆盖菜单隐藏、激活其他应用、重复托盘单击、Win+D、打开通知区后直接切换应用五类操作，各三轮；每次唤起检查七张卡片的实际命中位置。
+另以真实菜单执行三轮「收回桌面 → 隐藏 → 唤起」，并验证工具条「收回桌面」后仍可隐藏和唤起。
 测试会短暂操作前台与鼠标，运行前关闭 Aura，完成后恢复鼠标并退出测试实例；日志只保留在 D 盘。
 它使用自建参考窗口与独立测试配置；不仅检查 IsWindowVisible，还检查实际命中窗口和合成像素。
 

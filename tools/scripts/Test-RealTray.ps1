@@ -43,17 +43,27 @@ public static class AuraRealTray {
  [DllImport("user32.dll")]static extern int GetMenuItemCount(IntPtr menu);
  [DllImport("user32.dll")]static extern uint GetMenuItemID(IntPtr menu,int index);
  [DllImport("user32.dll")]static extern bool GetMenuItemRect(IntPtr window,IntPtr menu,uint item,out Rect rect);
- public static bool ClickHideMenu(IntPtr popup,uint process){
+ public static bool ClickMenuCommand(IntPtr popup,uint process,uint command){
   uint owner;GetWindowThreadProcessId(popup,out owner);if(owner!=process)return false;
   UIntPtr result;if(SendMessageTimeout(popup,0x01e1,UIntPtr.Zero,IntPtr.Zero,3,2000,out result)==IntPtr.Zero)return false;
   var menu=new IntPtr(unchecked((long)result.ToUInt64()));
-  for(int i=0;i<GetMenuItemCount(menu);i++)if(GetMenuItemID(menu,i)==101){
+  for(int i=0;i<GetMenuItemCount(menu);i++)if(GetMenuItemID(menu,i)==command){
    Rect r;if(!GetMenuItemRect(IntPtr.Zero,menu,(uint)i,out r))return false;
    int x=(r.Left+r.Right)/2,y=(r.Top+r.Bottom)/2;if(OwnerAt(x,y)!=process)return false;
    Click(x,y,false);return true;
   }return false;
  }
  public static bool Command(uint c){UIntPtr r;var h=Window("AuraWorkspaceController");return h!=IntPtr.Zero&&SendMessageTimeout(h,0x8002,new UIntPtr(c),IntPtr.Zero,3,5000,out r)!=IntPtr.Zero;}
+ [DllImport("user32.dll")]static extern uint GetDpiForWindow(IntPtr h);
+ public static bool ClickReturnButton(){
+  bool clicked=false;
+  EnumWindows((h,d)=>{var name=new StringBuilder(128);GetClassName(h,name,128);Rect r;GetWindowRect(h,out r);
+   if(name.ToString()=="AuraWorkspacePanel" && IsWindowVisible(h) && r.Right-r.Left>(r.Bottom-r.Top)*5){
+    double scale=GetDpiForWindow(h)/96.0;int x=r.Right-(int)(206*scale),y=r.Top+(int)(38*scale);
+    if(WindowFromPoint(new Point{X=x,Y=y})==h){Move(x,y);System.Threading.Thread.Sleep(250);Click(x,y,false);clicked=true;return false;}
+   }return true;
+  },IntPtr.Zero);return clicked;
+ }
  public static string State(){
   int count=0,visible=0,root=0,top=0,hittable=0;var seen=new HashSet<IntPtr>();
   CB cb=(h,d)=>{var s=new StringBuilder(128);GetClassName(h,s,128);
@@ -119,6 +129,14 @@ function Click-AuraElement($Element,[bool]$Right=$false){
  [AuraRealTray]::Click([int]$taskPoint.X,[int]$taskPoint.Y,$Right)
  Start-Sleep -Milliseconds 180
 }
+function Select-AuraTrayMenu([uint32]$Command){
+ $taskIcon=Open-AuraTrayIcon;Click-AuraElement $taskIcon $true
+ Start-Sleep -Milliseconds 350
+ $taskMenu=@([System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition) | Where-Object {$_.Current.ClassName -eq '#32768' -and $_.Current.ProcessId -eq $taskProcess.Id})
+ if($taskMenu.Count -ne 1){throw 'Aura menu missing'}
+ if(-not [AuraRealTray]::ClickMenuCommand([IntPtr]$taskMenu[0].Current.NativeWindowHandle,[uint32]$taskProcess.Id,$Command)){throw "Menu command $Command is not safely clickable"}
+ Start-Sleep -Milliseconds 250
+}
 function Open-AuraTrayIcon {
  $taskIcon=Find-AuraTrayIcon
  if($null -ne $taskIcon){return $taskIcon}
@@ -143,6 +161,28 @@ try {
  }
  if(-not (Test-Path $taskReady) -or -not (Select-String -LiteralPath $taskReady -Pattern '^workspace_ready$' -Quiet)){throw 'Aura startup timed out'}
  Write-AuraTrayState 'initial'
+ # Reproduce the reported route: floating -> actual Return menu -> hide -> reveal.
+ $null=[AuraRealTray]::Command(103)
+ for($taskReturnCycle=1;$taskReturnCycle -le 3;$taskReturnCycle++){
+  Select-AuraTrayMenu 102
+  Write-AuraTrayState "return-menu-$taskReturnCycle"
+  if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=0 topmost=0 '){throw 'Return did not place all cards on desktop'}
+  Select-AuraTrayMenu 101
+  if([AuraRealTray]::State() -notmatch ' visible=0 '){throw 'Hide after Return did not hide cards'}
+  $taskIcon=Open-AuraTrayIcon;Click-AuraElement $taskIcon
+  Start-Sleep -Milliseconds 600
+  Write-AuraTrayState "return-hide-reveal-$taskReturnCycle"
+  if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=7 topmost=0 hittable=7 '){throw 'Reveal after Return menu failed'}
+ }
+ if(-not [AuraRealTray]::ClickReturnButton()){throw 'Toolbar Return button is not safely clickable'}
+ Start-Sleep -Milliseconds 350
+ Write-AuraTrayState 'toolbar-return'
+ if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=0 topmost=0 '){throw 'Toolbar Return did not place cards on desktop'}
+ Select-AuraTrayMenu 101
+ if([AuraRealTray]::State() -notmatch ' visible=0 '){throw 'Hide after toolbar Return failed'}
+ $taskIcon=Open-AuraTrayIcon;Click-AuraElement $taskIcon
+ Start-Sleep -Milliseconds 600
+ if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=7 topmost=0 hittable=7 '){throw 'Reveal after toolbar Return failed'}
  foreach($HideMethod in @('menu','reference','tray','tray-reference','desktop')){
  for($taskCycle=1;$taskCycle -le 3;$taskCycle++){
   $taskIcon=Open-AuraTrayIcon
@@ -153,16 +193,7 @@ try {
   if([AuraRealTray]::State() -notmatch '^panels=7 visible=7 floating=7 topmost=0 hittable=7 '){throw "Not all seven cards are on screen after $HideMethod cycle $taskCycle"}
   if($HideMethod -eq 'tray'){$taskIcon=Open-AuraTrayIcon;Click-AuraElement $taskIcon}
   elseif($HideMethod -eq 'menu'){
-   $taskIcon=Open-AuraTrayIcon;Click-AuraElement $taskIcon $true
-   Start-Sleep -Milliseconds 350
-   $taskAuraId=(Get-Process Aura).Id
-   $taskMenu=@([System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition) | Where-Object {$_.Current.ClassName -eq '#32768' -and $_.Current.ProcessId -eq $taskAuraId})
-   if($taskMenu.Count -ne 1){
-    Get-Content -LiteralPath (Join-Path $taskRun 'events.log') | Write-Output
-    throw 'Aura menu missing'
-   }
-   if(-not [AuraRealTray]::ClickHideMenu([IntPtr]$taskMenu[0].Current.NativeWindowHandle,[uint32]$taskAuraId)){throw 'Actual Hide menu is not safely clickable'}
-   Start-Sleep -Milliseconds 250
+   Select-AuraTrayMenu 101
   }
   elseif($HideMethod -eq 'desktop'){[AuraRealTray]::ShowDesktop();Start-Sleep -Milliseconds 500}
   else{
