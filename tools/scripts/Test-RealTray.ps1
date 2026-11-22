@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$BuildRoot='D:\dev\build\Evoly_Aura',[string]$OutputRoot='D:\dev\tmp\Evoly_Aura\real-tray',[ValidateRange(1,100)][int]$MenuCycles=50,[switch]$ReferenceHost)
+param([string]$BuildRoot='D:\dev\build\Evoly_Aura',[string]$OutputRoot='D:\dev\tmp\Evoly_Aura\real-tray',[ValidateRange(0,100)][int]$MenuCycles=50,[ValidateRange(0,100)][int]$EditCycles=10,[switch]$ReferenceHost)
 $ErrorActionPreference='Stop'
 if($ReferenceHost){
  Add-Type -AssemblyName System.Windows.Forms
@@ -60,6 +60,7 @@ public static class AuraRealTray {
  [DllImport("user32.dll")]static extern IntPtr WindowFromPoint(Point p);
  [DllImport("user32.dll")]static extern IntPtr GetAncestor(IntPtr h,uint f);
  [DllImport("user32.dll")]static extern uint GetWindowThreadProcessId(IntPtr h,out uint p);
+ [DllImport("user32.dll")]static extern uint GetDpiForWindow(IntPtr h);
  [DllImport("user32.dll")]public static extern bool GetCursorPos(out Point p);
  [DllImport("user32.dll")]static extern bool SetCursorPos(int x,int y);
  [DllImport("user32.dll")]static extern void mouse_event(uint f,uint x,uint y,uint d,UIntPtr extra);
@@ -88,6 +89,27 @@ public static class AuraRealTray {
   }return false;
  }
  public static bool Command(uint c){UIntPtr r;var h=Window("AuraWorkspaceController");return h!=IntPtr.Zero&&SendMessageTimeout(h,0x8002,new UIntPtr(c),IntPtr.Zero,3,5000,out r)!=IntPtr.Zero;}
+ public static IntPtr Popup(uint process){
+  IntPtr found=IntPtr.Zero;EnumWindows((h,d)=>{uint owner;GetWindowThreadProcessId(h,out owner);var name=new StringBuilder(128);GetClassName(h,name,128);
+   if(owner==process&&name.ToString()=="#32768"&&IsWindowVisible(h)){found=h;return false;}return true;
+  },IntPtr.Zero);return found;
+ }
+ public static bool ClickEditButton(){
+  uint process;GetWindowThreadProcessId(Window("AuraWorkspaceController"),out process);bool clicked=false;
+  EnumWindows((h,d)=>{uint owner;GetWindowThreadProcessId(h,out owner);var name=new StringBuilder(128);GetClassName(h,name,128);
+   if(owner!=process||name.ToString()!="AuraWorkspacePanel")return true;
+   Rect r;if(!GetWindowRect(h,out r))return true;double scale=GetDpiForWindow(h)/96.0;
+   if((r.Right-r.Left)/scale<800||(r.Bottom-r.Top)/scale>110)return true;
+   var point=new Point{X=r.Right-(int)(195*scale),Y=r.Top+(int)(38*scale)};
+   if(WindowFromPoint(point)!=h)return false;
+   Click(point.X,point.Y,false);clicked=true;return false;
+  },IntPtr.Zero);return clicked;
+ }
+ public static bool EscapeEditing(){
+  uint owner,process;GetWindowThreadProcessId(GetForegroundWindow(),out owner);GetWindowThreadProcessId(Window("AuraWorkspaceController"),out process);
+  if(owner!=process)return false;
+  keybd_event(0x1b,0,0,UIntPtr.Zero);keybd_event(0x1b,0,2,UIntPtr.Zero);return true;
+ }
  public static string State(){
   int count=0,visible=0,root=0,top=0,hittable=0;var seen=new HashSet<IntPtr>();
   CB cb=(h,d)=>{var s=new StringBuilder(128);GetClassName(h,s,128);
@@ -160,10 +182,14 @@ function Click-AuraElement($Element,[bool]$Right=$false){
 }
 function Select-AuraTrayMenu([uint32]$Command){
  $taskIcon=Open-AuraTrayIcon;Click-AuraElement $taskIcon $true
- Start-Sleep -Milliseconds 350
- $taskMenu=@([System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children,[System.Windows.Automation.Condition]::TrueCondition) | Where-Object {$_.Current.ClassName -eq '#32768' -and $_.Current.ProcessId -eq $taskProcess.Id})
- if($taskMenu.Count -ne 1){throw 'Aura menu missing'}
- if(-not [AuraRealTray]::ClickMenuCommand([IntPtr]$taskMenu[0].Current.NativeWindowHandle,[uint32]$taskProcess.Id,$Command)){throw "Menu command $Command is not safely clickable"}
+ $taskMenu=[IntPtr]::Zero
+ for($taskWait=0;$taskWait -lt 20;$taskWait++){
+  $taskMenu=[AuraRealTray]::Popup([uint32]$taskProcess.Id)
+  if($taskMenu -ne [IntPtr]::Zero){break}
+  Start-Sleep -Milliseconds 100
+ }
+ if($taskMenu -eq [IntPtr]::Zero){throw 'Aura native menu missing'}
+ if(-not [AuraRealTray]::ClickMenuCommand($taskMenu,[uint32]$taskProcess.Id,$Command)){throw "Menu command $Command is not safely clickable"}
  Start-Sleep -Milliseconds 250
 }
 function Open-AuraTrayIcon {
@@ -190,6 +216,30 @@ try {
  }
  if(-not (Test-Path $taskReady) -or -not (Select-String -LiteralPath $taskReady -Pattern '^workspace_ready$' -Quiet)){throw 'Aura startup timed out'}
  Write-AuraTrayState 'initial'
+ for($taskEditCycle=1;$taskEditCycle -le $EditCycles;$taskEditCycle++){
+  # First cycle starts on the desktop; subsequent cycles alternate revealed and hidden.
+  # Use the actual tray and toolbar rather than only sending the edit command.
+  if($taskEditCycle%2 -eq 0){
+   if(-not [AuraRealTray]::ClickEditButton()){throw 'Edit entry button is covered; no external click sent.'}
+   Start-Sleep -Milliseconds 250
+  }else{Select-AuraTrayMenu 104}
+  Write-AuraTrayState "edit-start-$taskEditCycle"
+  if([AuraRealTray]::State() -notmatch '^panels=8 visible=8 floating=8 topmost=8 hittable=8 '){throw "Editing failed at cycle $taskEditCycle"}
+  if($taskEditCycle%3 -eq 0){
+   if(-not [AuraRealTray]::EscapeEditing()){throw 'Escape target is not Aura; no keyboard input sent.'}
+  }elseif($taskEditCycle%3 -eq 1){
+   if(-not [AuraRealTray]::ClickEditButton()){throw 'Edit toolbar button is covered; no external click sent.'}
+  }else{Select-AuraTrayMenu 104}
+  Start-Sleep -Milliseconds 300
+  Write-AuraTrayState "edit-finish-$taskEditCycle"
+  if([AuraRealTray]::State() -notmatch '^panels=8 visible=8 floating=8 topmost=0 hittable=8 '){throw "Finishing edit hid, reparented or covered cards at cycle $taskEditCycle"}
+  Select-AuraTrayMenu 101
+  if([AuraRealTray]::State() -notmatch ' visible=0 '){throw 'Hide failed after finishing edit'}
+  Select-AuraTrayMenu 100
+  Write-AuraTrayState "edit-reveal-$taskEditCycle"
+  if([AuraRealTray]::State() -notmatch '^panels=8 visible=8 floating=8 topmost=0 hittable=8 '){throw 'Reveal failed after finishing edit'}
+  if($taskEditCycle%2 -eq 0){Select-AuraTrayMenu 101}
+ }
  for($taskMenuCycle=1;$taskMenuCycle -le $MenuCycles;$taskMenuCycle++){
   Select-AuraTrayMenu 100
   Write-AuraTrayState "actual-menu-reveal-$taskMenuCycle"
@@ -226,7 +276,7 @@ try {
  }
  $null=[AuraRealTray]::Command(107)
  if(-not $taskProcess.WaitForExit(10000) -or $taskProcess.ExitCode -ne 0){throw 'Aura did not exit cleanly'}
- Write-Output "PASS: $MenuCycles actual Reveal/Hide menu cycles plus tray selection, other app activation, Win+D and overflow-to-app activation; all eight cards hittable after every reveal."
+ Write-Output "PASS: $EditCycles edit/finish/hide/reveal cycles, $MenuCycles actual Reveal/Hide menu cycles plus tray selection, other app activation, Win+D and overflow-to-app activation; all eight cards hittable after every reveal."
 } finally {
  if($taskProcess -and -not $taskProcess.HasExited){$null=[AuraRealTray]::Command(107);if(-not $taskProcess.WaitForExit(5000)){Stop-Process -Id $taskProcess.Id}}
  if($taskReferenceProcess -and -not $taskReferenceProcess.HasExited){

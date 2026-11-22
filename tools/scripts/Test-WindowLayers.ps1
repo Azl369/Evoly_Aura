@@ -223,9 +223,16 @@ try {
     Invoke-AuraLayerCommand 104
     if (@([AuraLayerRegression]::Panels() | Where-Object Topmost).Count -ne 8) { throw 'Layout editor was not temporarily raised.' }
     Invoke-AuraLayerCommand 104
-    if (@([AuraLayerRegression]::Panels() | Where-Object { $_.Parent -eq [IntPtr]::Zero -or $_.Topmost }).Count) {
-        throw 'Finishing layout edit left cards permanently topmost.'
-    }
+    Assert-AuraFloating
+    if ([AuraLayerRegression]::OwnerAt($taskX,$taskY) -ne $taskProcess.Id) { throw 'Finishing layout edit hid or covered the cards.' }
+    Invoke-AuraLayerCommand 121
+    Invoke-AuraLayerCommand 104
+    Invoke-AuraLayerCommand 104
+    $taskAfterEditPin = @([AuraLayerRegression]::Panels() | Where-Object Topmost)
+    if ($taskAfterEditPin.Count -ne 1 -or $taskAfterEditPin[0].Hwnd -ne $taskClock.Hwnd) { throw 'Finishing edit changed the explicit card pin.' }
+    if (@([AuraLayerRegression]::Panels() | Where-Object { $_.Parent -ne [IntPtr]::Zero -or -not $_.Visible }).Count) { throw 'Finishing pinned edit hid or attached cards.' }
+    Invoke-AuraLayerCommand 121
+    Assert-AuraFloating
     Invoke-AuraLayerCommand 107
     if (-not $taskProcess.WaitForExit(10000) -or $taskProcess.ExitCode -ne 0) { throw 'Aura did not exit cleanly.' }
     [ordered]@{

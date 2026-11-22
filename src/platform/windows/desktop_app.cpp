@@ -269,10 +269,14 @@ public:
         SetTimer(controller,minuteTimer,60000-time.wSecond*1000-time.wMilliseconds,nullptr);
     }
     void SetEditing(bool edit) {
-        temporaryReveal=false;
+        ++revealGeneration;
+        revealQueued=false;
+        // Editing is an explicit request to see the workspace. Finishing only
+        // locks the layout; it must not reattach cards behind the wallpaper.
+        temporaryReveal=desktop;
         editing=edit;
         if (!edit) { checkedTasks|=1; Save(); }
-        Show(true);
+        Show(true); RaiseFloating();
         Log(edit?"edit_started":"edit_finished");
     }
     void Reset() {
@@ -521,8 +525,8 @@ public:
     }
     LRESULT Message(HWND hwnd,UINT msg,WPARAM wp,LPARAM lp) {
         if (msg==WM_KEYDOWN && wp==VK_ESCAPE) {
-            if (temporaryReveal) Show(false);
-            else if (editing) SetEditing(false);
+            if (editing) SetEditing(false);
+            else if (temporaryReveal) Show(false);
             return 0;
         }
         if (hwnd==controller) {
@@ -648,6 +652,13 @@ public:
         case WM_MOUSELEAVE:
             if (panel) { panel->hovered=WidgetAction::none; InvalidateRect(hwnd,nullptr,FALSE); }
             return 0;
+        case WM_LBUTTONDBLCLK:
+            if (!panel || panel->placement.kind!=WidgetKind::toolbar) {
+                if (panel && panel->placement.kind==WidgetKind::notes) EditNote();
+                return 0;
+            }
+            // The second press on the edit toggle is still a button press.
+            [[fallthrough]];
         case WM_LBUTTONDOWN:
             if (panel) {
                 RECT r{}; GetClientRect(hwnd,&r);
@@ -664,9 +675,6 @@ public:
             if (dragging==hwnd) { dragging=nullptr; ReleaseCapture(); Save(); Log(resizing?"panel_resized":"panel_moved"); }
             return 0;
         case WM_CAPTURECHANGED: dragging=nullptr; return 0;
-        case WM_LBUTTONDBLCLK:
-            if (panel && panel->placement.kind==WidgetKind::notes) EditNote();
-            return 0;
         case WM_DROPFILES: {
             auto drop=reinterpret_cast<HDROP>(wp);std::vector<std::wstring> paths;
             if(panel && panel->placement.kind==WidgetKind::launcher) {
