@@ -16,12 +16,28 @@ using System.Runtime.InteropServices;
 public static class AuraWorkspaceCapture {
     public delegate bool Callback(IntPtr hwnd,IntPtr data);
     [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left,Top,Right,Bottom; }
+    [StructLayout(LayoutKind.Sequential)] public struct Point { public int X,Y; }
     [DllImport("user32.dll")] static extern bool EnumWindows(Callback cb,IntPtr data);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr hwnd,StringBuilder cls,int count);
     [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr FindWindow(string cls,string title);
     [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd,out Rect rect);
     [DllImport("user32.dll")] static extern IntPtr SendMessageTimeout(IntPtr hwnd,uint msg,UIntPtr wp,IntPtr lp,uint flags,uint timeout,out UIntPtr result);
     [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr context);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr hwnd);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd,IntPtr order,int x,int y,int w,int h,uint flags);
+    [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(Point p);
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out Point p);
+    [DllImport("user32.dll")] static extern bool SetCursorPos(int x,int y);
+    [DllImport("user32.dll")] static extern void mouse_event(uint flags,uint x,uint y,uint data,UIntPtr extra);
+    public static bool ActivateReference(IntPtr reference) {
+        SetForegroundWindow(reference);SetWindowPos(reference,IntPtr.Zero,0,0,0,0,0x13);
+        Rect r;if(!GetWindowRect(reference,out r))return false;
+        var point=new Point{X=r.Left+8,Y=r.Top+8};
+        if(WindowFromPoint(point)!=reference)return false;
+        Point prior;GetCursorPos(out prior);
+        SetCursorPos(point.X,point.Y);mouse_event(2,0,0,0,UIntPtr.Zero);mouse_event(4,0,0,0,UIntPtr.Zero);
+        SetCursorPos(prior.X,prior.Y);return true;
+    }
     public static Rect[] Panels() {
         var list=new List<Rect>();
         EnumWindows((hwnd,data)=>{var cls=new StringBuilder(128);GetClassName(hwnd,cls,128);
@@ -55,6 +71,10 @@ $taskGradient.Dispose(); $taskGraphics.Dispose()
 $taskReference.BackgroundImage = $taskBackground
 $taskReference.Show()
 [System.Windows.Forms.Application]::DoEvents()
+if (-not [AuraWorkspaceCapture]::ActivateReference($taskReference.Handle)) {
+    $taskReference.Close(); $taskReference.Dispose(); $taskBackground.Dispose()
+    throw 'Controlled capture background is covered; no external click sent.'
+}
 $taskArguments = @('--preview','--duration',60,'--data-dir',('"' + (Join-Path $OutputRoot 'state') + '"'),
     '--log',('"' + (Join-Path $OutputRoot 'workspace.log') + '"'))
 $taskProcess = Start-Process (Join-Path $BuildRoot 'Release\Aura.exe') -ArgumentList $taskArguments -WindowStyle Hidden -PassThru
@@ -78,7 +98,7 @@ function Save-AuraWorkspaceImage([string]$Name) {
     } finally { $taskCanvas.Dispose(); $taskBitmap.Dispose() }
 }
 try {
-    for ($taskWait=0;$taskWait -lt 20;$taskWait++) {
+    for ($taskWait=0;$taskWait -lt 40;$taskWait++) {
         [System.Windows.Forms.Application]::DoEvents()
         Start-Sleep -Milliseconds 100
     }
